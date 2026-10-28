@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Remote Overlay Controller</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-box">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <h1 class="logo-title">Remote Overlay</h1>
+          <p class="logo-subtitle">Next.js Dynamic API</p>
+        </div>
+      </div>
+      <div id="status-badge" class="badge badge-checking">Checking...</div>
+    </header>
+
+    <!-- Active Domain Badge -->
+    <div class="domain-banner">
+      <span class="label">Current Domain:</span>
+      <strong id="active-domain" class="domain-text">Detecting...</strong>
+    </div>
+
+    <!-- Rule Matched Banner -->
+    <div id="rule-info-card" class="info-card">
+      <div class="info-row">
+        <span>Overlay Rule:</span>
+        <strong id="rule-status">Loading...</strong>
+      </div>
+    </div>
+
+    <!-- Client Profile Section -->
+    <section class="section">
+      <h2 class="section-title">Client Identity</h2>
+      <div class="field-group">
+        <label>Client ID (Targeting ID):</label>
+        <div class="id-row">
+          <input type="text" id="client-id-input" readonly />
+          <button id="copy-id-btn" class="btn btn-secondary btn-icon" title="Copy ID">📋</button>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label>Your Email / Name:</label>
+        <input type="text" id="user-email-input" placeholder="e.g. user@example.com" />
+      </div>
+    </section>
+
+    <!-- Backend API Config -->
+    <section class="section">
+      <h2 class="section-title">Next.js Backend Server</h2>
+      <div class="field-group">
+        <label>API Base URL:</label>
+        <input type="text" id="api-url-input" placeholder="http://localhost:3000" />
+      </div>
+    </section>
+
+    <!-- Action Buttons -->
+    <div class="actions-grid">
+      <button id="save-btn" class="btn btn-primary">Save Settings</button>
+      <button id="force-refresh-btn" class="btn btn-secondary">Sync Overlay</button>
+    </div>
+
+    <button id="open-dashboard-btn" class="btn btn-outline" style="margin-top: 10px; width: 100%;">
+      Open Admin Dashboard ↗
+    </button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

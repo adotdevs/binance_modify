@@ -1,0 +1,105 @@
+Overlay Extension (SaaS Upgrade)
+
+It say binance but needs to be for any domain
+admin add domain and add the popup code for that domain
+
+
+
+
+
+1. Project Overview
+Upgrade the existing Chrome Extension to support individual client authentication and targeted messaging.
+
+Current State: One remote JSON config for all users.
+New State: Users must log in to access "Client Only" features/messages. The Admin can see who is logged in and message specific user IDs.
+
+
+2. Recommended Tech Stack
+Extension: Manifest V3 (Vanilla JS/CSS or Vue.js, keeping it lightweight).
+Backend/Database: Supabase (Free Tier).
+Why: Provides Authentication, Relational Database (Postgres), and Realtime subscriptions out of the box (better than JSONBin).
+Admin Panel: A simple Web Dashboard (React or HTML/JS) hosted on Vercel or Netlify. Connected to the same Supabase project.
+
+
+
+3. Database Schema (Supabase/Postgres)
+The developer needs to set up these tables in Supabase:
+
+A. profiles (Users)
+id (UUID, Primary Key)
+email (Text, Unique)
+username (Text)
+is_client (Boolean, Default: True)
+created_at (Timestamp)
+B. messages (Notifications/Broadcasts)
+id (UUID, Primary Key)
+body (Text/HTML)
+title (Text)
+color_bg (Text/Hex)
+color_text (Text/Hex)
+target_user_id (UUID, Nullable)
+If NULL: Shows to all users (Global Broadcast).
+If USER_ID: Shows only to that logged-in client.
+is_active (Boolean, Default: True)
+created_at (Timestamp)
+
+
+4. Feature Requirements
+Part A: Client Extension (What the User Sees)
+Login Popup:
+Replace the current "Admin Settings" popup.
+User opens extension icon -> Sees Login Form (Email/Password).
+On Success: Store a user_session_id in chrome.storage.
+On Logout: Clear session.
+Dashboard (Authenticated):
+Once logged in, show a "Profile" tab showing their Client ID/Email.
+Show "Settings" tab where they can choose their display name.
+Binance Overlay Logic Update:
+Step 1: Check if user is logged in (chrome.storage).
+Step 2: Fetch messages from Supabase (SQL Logic: SELECT * FROM messages WHERE (target_user_id = $user_id OR target_user_id IS NULL) AND is_active = true).
+Step 3: If Specific Message exists, render that. If only Global Message exists, render that.
+Step 4: If no message, hide overlay (or show "Welcome").
+Realtime Update: Use Supabase Realtime to listen for updates to the messages table so the popup updates without a page reload.
+
+
+Part B: Admin Dashboard (What You See - Web App)
+Login: Admin login to access the panel.
+Client List:
+Table showing all users who have signed up (Email, Username, Last Login Time).
+Push Message Tool:
+Input: User Type (e.g., Email or ID).
+Inputs: Title, Message Body, Colors.
+Scope: Toggle "Global" vs "Specific User".
+Action: Click "Send" -> Inserts row into messages table.
+Active Session Monitor: (Optional) See which clients have the extension active recently.
+5. Logic & Flow
+New Client Installs:
+Opens Extension -> "Login Required" screen appears.
+Logs in (creates profile in Supabase if new).
+Opens Binance -> Overlay loads.
+Extension queries Supabase: "Do I have a message?"
+Admin Sends Message:
+Admin logs into Web Dashboard.
+Selects Client "Michael" -> Types message -> Hits Send.
+Message saved to DB with target_user_id = Michael_ID.
+Client Receives Message:
+Client is on Binance.
+Extension listens for DB update OR user refreshes Binance.
+Extension detects the new message for their ID.
+Overlay DOM updates instantly with the new text/colors.
+6. Deliverables for Developer
+GitHub Repository:
+extension/ folder (Updated Manifest V3 code).
+dashboard/ folder (HTML/React Admin Panel code).
+supabase_config.json (Migration scripts for DB).
+Environment Variables: Explain where to put Supabase API_KEY and URL.
+Deployment Instructions:
+How to upload extension to Chrome Web Store.
+How to host Admin Dashboard (Vercel).
+7. Notes for Developer
+Keep Old Logic: Preserve the current JSONBin logic as a fallback if Supabase is down.
+Security: Ensure the Admin Panel requires authentication so users don't see the "Push Button."
+Performance: Do not fetch messages every second. Poll every 30 seconds or use Supabase Realtime Subscriptions for efficiency.
+Manifest V3: Must use Service Workers (background.js) effectively, as the popup is not always loaded.
+
+
