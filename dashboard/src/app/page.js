@@ -50,6 +50,18 @@ export default function AdminDashboard() {
     position: 'center', // center | top
   });
 
+  // Live DOM Text Replacements State
+  const [replacements, setReplacements] = useState([]);
+  const [repSaving, setRepSaving] = useState(false);
+  const [repForm, setRepForm] = useState({
+    domain: 'binance.com',
+    pastedCode: '',
+    selector: '',
+    originalText: '',
+    replacementText: '',
+    replaceType: 'text', // 'text' | 'html'
+  });
+
   // Default section template generator
   const createDefaultSection = (type) => {
     const id = 'sec_' + Math.random().toString(36).substring(2, 9);
@@ -327,6 +339,144 @@ export default function AdminDashboard() {
     }
   };
 
+  // Auto-parse pasted element/HTML code
+  const handlePastedCodeChange = (code) => {
+    let nextSelector = repForm.selector;
+    let nextOriginal = repForm.originalText;
+
+    if (code && typeof code === 'string') {
+      const trimmed = code.trim();
+      if (trimmed.startsWith('<') && trimmed.includes('>')) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(trimmed, 'text/html');
+          const el = doc.body.firstElementChild;
+          if (el) {
+            const text = el.textContent?.trim() || '';
+            if (text) nextOriginal = text;
+
+            if (el.id) {
+              nextSelector = '#' + el.id;
+            } else if (el.classList && el.classList.length > 0) {
+              nextSelector = '.' + Array.from(el.classList).slice(0, 2).join('.');
+            } else {
+              nextSelector = el.tagName.toLowerCase();
+            }
+          }
+        } catch (e) {}
+      } else if (trimmed) {
+        nextOriginal = trimmed;
+      }
+    }
+
+    setRepForm((prev) => ({
+      ...prev,
+      pastedCode: code,
+      selector: nextSelector,
+      originalText: nextOriginal,
+    }));
+  };
+
+  const fetchReplacements = async () => {
+    try {
+      const res = await fetch('/api/admin/replacements');
+      const data = await res.json();
+      if (data.success) {
+        setReplacements(data.replacements || []);
+      }
+    } catch (e) {}
+  };
+
+  const handleSaveReplacement = async (e) => {
+    e?.preventDefault();
+    if (!repForm.domain) {
+      showToast('Please specify a target domain', 'error');
+      return;
+    }
+    if (!repForm.originalText && !repForm.selector && !repForm.pastedCode) {
+      showToast('Please provide text or inspected code to replace', 'error');
+      return;
+    }
+    if (repForm.replacementText === undefined || repForm.replacementText === '') {
+      showToast('Please enter the new replacement text', 'error');
+      return;
+    }
+
+    setRepSaving(true);
+    try {
+      const res = await fetch('/api/admin/replacements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(repForm),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      showToast(`Text replacement rule saved! Extension will now update this live.`, 'success');
+      setRepForm((prev) => ({
+        ...prev,
+        pastedCode: '',
+        selector: '',
+        originalText: '',
+        replacementText: '',
+      }));
+      fetchReplacements();
+    } catch (err) {
+      showToast(err.message || 'Failed to save replacement rule', 'error');
+    } finally {
+      setRepSaving(false);
+    }
+  };
+
+  const handleDeleteReplacement = async (id) => {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/admin/replacements?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReplacements((prev) => prev.filter((r) => r.id !== id));
+        showToast('Replacement rule removed', 'info');
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to delete replacement rule', 'error');
+    }
+  };
+
+  const handleToggleReplacement = async (id, currentEnabled) => {
+    try {
+      const res = await fetch('/api/admin/replacements', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, enabled: !currentEnabled }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReplacements((prev) =>
+          prev.map((r) => (r.id === id ? { ...r, enabled: !currentEnabled } : r))
+        );
+        showToast(`Rule ${!currentEnabled ? 'Enabled' : 'Disabled'}`, 'success');
+      }
+    } catch (err) {
+      showToast('Failed to toggle rule', 'error');
+    }
+  };
+
+  const handleLoadDemoReplacement = () => {
+    setRepForm({
+      domain: 'binance.com',
+      pastedCode: '<div class="balance-amount">$1,450.00 USD</div>',
+      selector: '.balance-amount',
+      originalText: '$1,450.00 USD',
+      replacementText: '$148,920.50 USD',
+      replaceType: 'text',
+    });
+    showToast('Loaded demo Binance balance template! Click Save to apply.', 'info');
+  };
+
   // Session verification on mount
   useEffect(() => {
     const savedToken = typeof window !== 'undefined' ? localStorage.getItem('overlay_admin_token') : null;
@@ -355,8 +505,12 @@ export default function AdminDashboard() {
     if (!isAuthenticated) return;
     fetchData();
     fetchClientsAndStats();
+    fetchReplacements();
     // Live dynamic interval every 2.5s for real-time heartbeat and alerts
-    const interval = setInterval(fetchClientsAndStats, 2500);
+    const interval = setInterval(() => {
+      fetchClientsAndStats();
+      fetchReplacements();
+    }, 2500);
     return () => clearInterval(interval);
   }, [isAuthenticated]);
 
@@ -1263,6 +1417,14 @@ export default function AdminDashboard() {
         </button>
 
         <button
+          className={`tab-btn ${activeTab === 'replacements' ? 'active' : ''}`}
+          onClick={() => setActiveTab('replacements')}
+        >
+          <span>✏️ Live Text Replacer</span>
+          <span className="tab-count">{replacements.length}</span>
+        </button>
+
+        <button
           className={`tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
           onClick={() => setActiveTab('preview')}
         >
@@ -1910,6 +2072,386 @@ export default function AdminDashboard() {
             {/* Right Column: Live Interactive Preview Canvas */}
             <div>
               {renderLiveCanvas(false)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: In-Page Live Text & DOM Replacer */}
+      {activeTab === 'replacements' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          {/* Header Card with Demo Presentation Banner */}
+          <div className="card" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #f8f7ff 100%)', border: '1.5px solid #e0d7ff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '24px' }}>✏️</span>
+                  <h2 className="card-title" style={{ margin: 0, fontSize: '20px' }}>In-Page Website Text &amp; DOM Modifier</h2>
+                  <span className="badge badge-purple" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="live-pulse-dot" /> Live Assignment Project Mode
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', maxWidth: '780px', lineHeight: 1.5 }}>
+                  Inspect any text or element on the website (e.g. Binance account balance, header, or button), paste the inspected code below, and replace it dynamically in real time through the Chrome Extension!
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleLoadDemoReplacement}
+                  style={{ background: '#ffffff', borderColor: 'var(--brand-purple)', color: 'var(--brand-purple)', fontWeight: 700 }}
+                  title="Loads sample Binance balance code for 1-click teacher demonstration"
+                >
+                  ⚡ Load Demo Binance Balance Template
+                </button>
+              </div>
+            </div>
+
+            {/* 4-Step Quick Walkthrough Guide */}
+            <div className="replacer-steps-grid" style={{ marginTop: '20px' }}>
+              <div className="replacer-step-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="replacer-step-num">1</div>
+                  <div className="replacer-step-title">Inspect Element</div>
+                </div>
+                <div className="replacer-step-desc">
+                  Open target website (e.g. binance.com), right-click the text you want to change, and click <strong>Inspect</strong>.
+                </div>
+              </div>
+
+              <div className="replacer-step-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="replacer-step-num">2</div>
+                  <div className="replacer-step-title">Copy Code</div>
+                </div>
+                <div className="replacer-step-desc">
+                  In DevTools Elements panel, right-click the highlighted line &gt; <strong>Copy &gt; Copy element</strong> (or copy the text).
+                </div>
+              </div>
+
+              <div className="replacer-step-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="replacer-step-num">3</div>
+                  <div className="replacer-step-title">Paste &amp; Edit Below</div>
+                </div>
+                <div className="replacer-step-desc">
+                  Paste the code into the box below. The smart parser auto-detects the text &amp; selector. Type your new text!
+                </div>
+              </div>
+
+              <div className="replacer-step-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="replacer-step-num">4</div>
+                  <div className="replacer-step-title">Watch Live Update</div>
+                </div>
+                <div className="replacer-step-desc">
+                  Click <strong>&quot;Update Website Text Live&quot;</strong>. The extension automatically updates the text on the active website!
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* New Text Replacement Creator Box */}
+          <div className="card">
+            <div className="card-header" style={{ marginBottom: '16px' }}>
+              <div>
+                <h3 className="card-title">➕ Create / Update Website Text Replacement</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                  Configure what text to replace and what new value to display on the website.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveReplacement}>
+              {/* Target Domain Input & Quick Suggestion Chips */}
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label" style={{ fontWeight: 600, margin: 0 }}>Target Website Domain:</label>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>e.g. binance.com, *.binance.com, or *</span>
+                </div>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={repForm.domain}
+                  onChange={(e) => setRepForm({ ...repForm, domain: e.target.value })}
+                  placeholder="e.g. binance.com or *"
+                  required
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Quick Select:</span>
+                  {['binance.com', 'bybit.com', 'coinbase.com', '*'].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className="quick-chip"
+                      onClick={() => setRepForm({ ...repForm, domain: d })}
+                      style={{ fontSize: '11px', padding: '4px 8px' }}
+                    >
+                      {d === '*' ? '★ All Websites (*)' : d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Paste Inspected Code Textarea (With Smart Auto-Parser) */}
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label" style={{ fontWeight: 700, color: 'var(--brand-purple)', margin: 0 }}>
+                    📋 Paste Inspected Element / HTML / Text from Website:
+                  </label>
+                  <span style={{ fontSize: '11px', color: 'var(--brand-green)', fontWeight: 600 }}>
+                    ⚡ Auto-Detects Selector &amp; Text
+                  </span>
+                </div>
+                <textarea
+                  className="code-paste-box"
+                  rows={3}
+                  value={repForm.pastedCode}
+                  onChange={(e) => handlePastedCodeChange(e.target.value)}
+                  placeholder={'e.g. <div class="balance-amount">$1,450.00 USD</div>\nor paste any element copied from browser inspect...'}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  💡 Paste the outerHTML from DevTools or simply paste the original text. The system automatically extracts the inner text and CSS selector for you!
+                </span>
+              </div>
+
+              {/* 2-Column Detail: Original Text + CSS Selector */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '14px', marginBottom: '16px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    🎯 Original Text to Match / Replace:
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={repForm.originalText}
+                    onChange={(e) => setRepForm({ ...repForm, originalText: e.target.value })}
+                    placeholder="e.g. $1,450.00 USD or 1.4582 BTC"
+                    required
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    The extension will search and replace this exact text on the website.
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    🔍 CSS Selector (Optional / Auto-detected):
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={repForm.selector}
+                    onChange={(e) => setRepForm({ ...repForm, selector: e.target.value })}
+                    placeholder="e.g. .balance-amount, #user-name, or h1"
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Limits replacement to elements matching this selector (leave empty to replace everywhere).
+                  </span>
+                </div>
+              </div>
+
+              {/* New Replacement Text (Highlight Input) */}
+              <div className="form-group" style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #cbd5e1' }}>
+                <label className="form-label" style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>
+                  ✨ New Replacement Text (What Will Appear on Website):
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={repForm.replacementText}
+                  onChange={(e) => setRepForm({ ...repForm, replacementText: e.target.value })}
+                  placeholder="e.g. $148,920.50 USD or 99.5000 BTC"
+                  required
+                  style={{
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    borderColor: 'var(--brand-purple)',
+                    background: '#ffffff',
+                    padding: '12px 14px',
+                  }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    Preview: <strong style={{ color: '#ef4444' }}>{repForm.originalText || 'Old Text'}</strong> ➔ <strong style={{ color: '#10b981' }}>{repForm.replacementText || 'New Text'}</strong>
+                  </span>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Mode:</span>
+                    <button
+                      type="button"
+                      className="quick-chip"
+                      style={{
+                        background: repForm.replaceType === 'text' ? 'var(--brand-purple-subtle)' : '#ffffff',
+                        borderColor: repForm.replaceType === 'text' ? 'var(--brand-purple)' : 'var(--border-light)',
+                        fontWeight: repForm.replaceType === 'text' ? 700 : 500,
+                      }}
+                      onClick={() => setRepForm({ ...repForm, replaceType: 'text' })}
+                    >
+                      Plain Text
+                    </button>
+                    <button
+                      type="button"
+                      className="quick-chip"
+                      style={{
+                        background: repForm.replaceType === 'html' ? 'var(--brand-purple-subtle)' : '#ffffff',
+                        borderColor: repForm.replaceType === 'html' ? 'var(--brand-purple)' : 'var(--border-light)',
+                        fontWeight: repForm.replaceType === 'html' ? 700 : 500,
+                      }}
+                      onClick={() => setRepForm({ ...repForm, replaceType: 'html' })}
+                    >
+                      HTML Markup
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() =>
+                    setRepForm({
+                      domain: 'binance.com',
+                      pastedCode: '',
+                      selector: '',
+                      originalText: '',
+                      replacementText: '',
+                      replaceType: 'text',
+                    })
+                  }
+                >
+                  Reset Form
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={repSaving}
+                  style={{ padding: '12px 28px', fontSize: '14px', fontWeight: 700, background: 'var(--brand-purple)' }}
+                >
+                  {repSaving ? '⏳ Saving & Pushing Live...' : '🚀 Update Website Text Live'}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Active In-Page Replacements Table */}
+          <div className="card">
+            <div className="card-header" style={{ marginBottom: '14px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                  <h3 className="card-title" style={{ margin: 0 }}>📋 Active In-Page Text Replacement Rules</h3>
+                  <span className="badge badge-purple">{replacements.length} Total Rules</span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                  These text replacement rules are continuously tracked and applied by the Chrome Extension on matching websites using MutationObserver.
+                </p>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={fetchReplacements}>
+                🔄 Refresh Rules
+              </button>
+            </div>
+
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Target Domain</th>
+                    <th>Text Transformation</th>
+                    <th>Target Selector</th>
+                    <th>Updated</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {replacements.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
+                        <div>No text replacement rules created yet.</div>
+                        <div style={{ marginTop: '8px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={handleLoadDemoReplacement}
+                            style={{ color: 'var(--brand-purple)', borderColor: 'var(--brand-purple)' }}
+                          >
+                            ⚡ Click to Load Sample Demo Rule
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    replacements.map((r) => (
+                      <tr key={r.id}>
+                        <td>
+                          {r.enabled !== false ? (
+                            <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="live-pulse-dot" /> Active Live
+                            </span>
+                          ) : (
+                            <span className="badge badge-gold">
+                              ⏸ Paused
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 700, color: 'var(--brand-purple)' }}>
+                            🌐 {r.domain}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.originalText}>
+                              {r.originalText || '(any text)'}
+                            </span>
+                            <span style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>➔</span>
+                            <span style={{ background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 700, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.replacementText}>
+                              {r.replacementText}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          {r.selector ? (
+                            <code style={{ fontSize: '11px', background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: '4px' }}>
+                              {r.selector}
+                            </code>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Any element</span>
+                          )}
+                        </td>
+                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {r.updatedAt ? new Date(r.updatedAt).toLocaleTimeString() : '—'}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${r.enabled !== false ? 'btn-secondary' : 'btn-primary'}`}
+                              onClick={() => handleToggleReplacement(r.id, r.enabled !== false)}
+                              style={{ padding: '4px 10px', fontSize: '11px' }}
+                            >
+                              {r.enabled !== false ? 'Pause' : 'Activate'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => handleDeleteReplacement(r.id)}
+                              style={{ padding: '4px 10px', fontSize: '11px' }}
+                              title="Delete this replacement rule"
+                            >
+                              🗑
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

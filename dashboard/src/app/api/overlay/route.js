@@ -1,5 +1,5 @@
 import { jsonResponse, handleOptions } from '@/lib/cors';
-import { findMatchingRule } from '@/lib/db';
+import { findMatchingRule, getReplacements } from '@/lib/db';
 
 export async function OPTIONS() {
   return handleOptions();
@@ -21,7 +21,10 @@ export async function GET(request) {
       );
     }
 
-    const matchedRule = await findMatchingRule(domain, clientId);
+    const [matchedRule, replacements] = await Promise.all([
+      findMatchingRule(domain, clientId),
+      getReplacements(domain),
+    ]);
 
     if (matchedRule) {
       return jsonResponse({
@@ -29,6 +32,7 @@ export async function GET(request) {
         matched: true,
         domain,
         clientId,
+        replacements,
         targetClientId: matchedRule.targetClientId || null,
         isBroadcast: Boolean(matchedRule.isBroadcast),
         rule: matchedRule,
@@ -47,6 +51,7 @@ export async function GET(request) {
       matched: false,
       domain,
       clientId,
+      replacements,
       message: `No active overlay rule matched domain: ${domain}`,
     });
   } catch (error) {

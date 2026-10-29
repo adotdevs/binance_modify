@@ -1,5 +1,5 @@
 import { handleOptions } from '@/lib/cors';
-import { findMatchingRule } from '@/lib/db';
+import { findMatchingRule, getReplacements } from '@/lib/db';
 import { subscribeToUpdates } from '@/lib/events';
 
 export async function OPTIONS() {
@@ -29,13 +29,18 @@ export async function GET(request) {
 
       // 1. Send immediate initial state on connection
       try {
-        const initialRule = domain ? await findMatchingRule(domain, clientId) : null;
+        const [initialRule, initialReplacements] = await Promise.all([
+          domain ? findMatchingRule(domain, clientId) : null,
+          domain ? getReplacements(domain) : [],
+        ]);
+
         if (initialRule) {
           send({
             type: 'init',
             matched: true,
             domain,
             clientId,
+            replacements: initialReplacements,
             targetClientId: initialRule.targetClientId || null,
             isBroadcast: Boolean(initialRule.isBroadcast),
             rule: initialRule,
@@ -53,6 +58,7 @@ export async function GET(request) {
             matched: false,
             domain,
             clientId,
+            replacements: initialReplacements,
             message: 'No active overlay rule',
           });
         }
@@ -63,13 +69,18 @@ export async function GET(request) {
       // 2. Subscribe to real-time updates from admin actions
       unsubscribe = subscribeToUpdates(async () => {
         try {
-          const updatedRule = domain ? await findMatchingRule(domain, clientId) : null;
+          const [updatedRule, updatedReplacements] = await Promise.all([
+            domain ? findMatchingRule(domain, clientId) : null,
+            domain ? getReplacements(domain) : [],
+          ]);
+
           if (updatedRule) {
             send({
               type: 'update',
               matched: true,
               domain,
               clientId,
+              replacements: updatedReplacements,
               targetClientId: updatedRule.targetClientId || null,
               isBroadcast: Boolean(updatedRule.isBroadcast),
               rule: updatedRule,
@@ -87,6 +98,7 @@ export async function GET(request) {
               matched: false,
               domain,
               clientId,
+              replacements: updatedReplacements,
               message: 'Rule removed or disabled',
             });
           }

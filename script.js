@@ -560,6 +560,154 @@
     }
   }
 
+  // =========================================================================
+  // LIVE IN-PAGE DOM TEXT & HTML REPLACER (With MutationObserver)
+  // =========================================================================
+  let activeReplacements = [];
+  let domObserver = null;
+  let isReplacing = false;
+
+  function setLiveReplacements(replacements) {
+    activeReplacements = Array.isArray(replacements) ? replacements : [];
+    if (activeReplacements.length > 0) {
+      applyDomReplacements();
+      setupDomObserver();
+    }
+  }
+
+  function applyDomReplacements() {
+    if (!activeReplacements || activeReplacements.length === 0) return;
+    if (isReplacing) return;
+    isReplacing = true;
+
+    try {
+      activeReplacements.forEach((rule) => {
+        if (rule.enabled === false) return;
+
+        const original = (rule.originalText || "").trim();
+        const replacement = rule.replacementText !== undefined ? String(rule.replacementText) : "";
+        const selector = (rule.selector || "").trim();
+        const isHtml = rule.replaceType === "html";
+
+        // 1. Selector-based replacement (if selector provided)
+        if (selector) {
+          try {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach((el) => {
+              if (isHtml) {
+                if (el.innerHTML !== replacement) {
+                  el.innerHTML = replacement;
+                  el.setAttribute("data-overlay-replaced", "true");
+                }
+              } else {
+                if (original) {
+                  if (el.textContent && el.textContent.includes(original)) {
+                    el.textContent = el.textContent.split(original).join(replacement);
+                    el.setAttribute("data-overlay-replaced", "true");
+                  }
+                } else {
+                  if (el.textContent !== replacement) {
+                    el.textContent = replacement;
+                    el.setAttribute("data-overlay-replaced", "true");
+                  }
+                }
+              }
+            });
+          } catch (e) {}
+        }
+
+        // 2. High-performance Deep Text Node Search (TreeWalker)
+        // Replaces matching text anywhere on the page, even inside deeply nested tags!
+        if (original && original.length > 0) {
+          const root = document.body || document.documentElement;
+          if (!root) return;
+
+          const walker = document.createTreeWalker(
+            root,
+            NodeFilter.SHOW_TEXT,
+            {
+              acceptNode: function (node) {
+                if (!node || !node.nodeValue) return NodeFilter.FILTER_REJECT;
+                const parent = node.parentElement;
+                if (!parent) return NodeFilter.FILTER_REJECT;
+                const tag = parent.tagName ? parent.tagName.toLowerCase() : "";
+                if (tag === "script" || tag === "style" || tag === "noscript" || tag === "textarea") {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                if (parent.closest("#preview-custom-popup, #custom-sticky-popup, #custom-remote-overlay-container")) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                if (node.nodeValue.includes(original)) {
+                  return NodeFilter.FILTER_ACCEPT;
+                }
+                return NodeFilter.FILTER_SKIP;
+              },
+            }
+          );
+
+          const matchingNodes = [];
+          while (walker.nextNode()) {
+            matchingNodes.push(walker.currentNode);
+          }
+
+          matchingNodes.forEach((node) => {
+            if (node.nodeValue && node.nodeValue.includes(original)) {
+              node.nodeValue = node.nodeValue.split(original).join(replacement);
+              if (node.parentElement) {
+                node.parentElement.setAttribute("data-overlay-replaced", "true");
+              }
+            }
+          });
+        }
+      });
+    } catch (err) {
+      console.warn("[RemoteOverlay] Error applying DOM text replacements:", err);
+    } finally {
+      isReplacing = false;
+    }
+  }
+
+  function setupDomObserver() {
+    if (domObserver) return;
+    let debounceTimer = null;
+
+    domObserver = new MutationObserver((mutations) => {
+      if (isReplacing) return;
+      let hasExternalChange = false;
+      for (let i = 0; i < mutations.length; i++) {
+        const target = mutations[i].target;
+        if (target && target.nodeType === 1) {
+          if (!target.closest?.("#preview-custom-popup, #custom-sticky-popup, #custom-remote-overlay-container")) {
+            hasExternalChange = true;
+            break;
+          }
+        } else {
+          hasExternalChange = true;
+          break;
+        }
+      }
+
+      if (hasExternalChange) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          applyDomReplacements();
+        }, 35);
+      }
+    });
+
+    if (document.body) {
+      domObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    } else {
+      document.addEventListener("DOMContentLoaded", () => {
+        if (document.body && !domObserver) setupDomObserver();
+      });
+    }
+  }
+
   // 6. Direct zero-cache Live Fetch
   async function fetchLiveOverlay(apiUrl, clientId) {
     const cacheBuster = Date.now();
@@ -583,6 +731,11 @@
   // Handle incoming live payload with STRICT client targeting validation
   function handleLivePayload(data, myClientId) {
     if (!data) return;
+
+    // 0. LIVE IN-PAGE TEXT & DOM REPLACEMENTS
+    if (data.replacements && Array.isArray(data.replacements)) {
+      setLiveReplacements(data.replacements);
+    }
 
     // 1. STRICT TARGETING VALIDATION:
     // If payload is targeted to a specific client ID, ensure it matches THIS client!
