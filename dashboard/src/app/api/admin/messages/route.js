@@ -21,7 +21,24 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { targetClientId, title, body: msgBody, colorBg, colorText, colorTitle, height, customCss, customJs } = body;
+    const {
+      targetClientId,
+      title,
+      body: msgBody,
+      colorBg,
+      colorText,
+      colorTitle,
+      borderColor,
+      ctaText,
+      ctaUrl,
+      ctaBg,
+      ctaColor,
+      position,
+      height,
+      width,
+      customCss,
+      customJs,
+    } = body;
 
     if (!title || !msgBody) {
       return jsonResponse({ success: false, error: 'Title and Body are required' }, 400);
@@ -34,7 +51,14 @@ export async function POST(request) {
       colorBg,
       colorText,
       colorTitle,
+      borderColor,
+      ctaText,
+      ctaUrl,
+      ctaBg,
+      ctaColor,
+      position,
       height,
+      width,
       customCss,
       customJs,
     });
