@@ -1,6 +1,7 @@
 // Background Service Worker (Manifest V3)
 const ALARM_NAME = 'poll_remote_overlay';
 const POLL_INTERVAL_MINUTES = 1; // Check every minute
+const DEFAULT_SERVER_URL = 'https://extension-admin-phi.vercel.app';
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[RemoteOverlay Background] Installed');
@@ -8,7 +9,7 @@ chrome.runtime.onInstalled.addListener(() => {
   // Initialize defaults if not present
   chrome.storage.local.get(['apiBaseUrl', 'clientId'], (data) => {
     const updates = {};
-    if (!data.apiBaseUrl) updates.apiBaseUrl = 'http://localhost:3000';
+    if (!data.apiBaseUrl) updates.apiBaseUrl = DEFAULT_SERVER_URL;
     if (!data.clientId) updates.clientId = 'client_' + Math.random().toString(36).substring(2, 10);
 
     if (Object.keys(updates).length > 0) {
