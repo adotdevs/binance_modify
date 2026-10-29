@@ -10,9 +10,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const copyIdBtn = document.getElementById('copy-id-btn');
   const openDashboardBtn = document.getElementById('open-dashboard-btn');
 
-  const DEFAULT_SERVER_URL = 'https://extension-admin-phi.vercel.app';
+  const DEFAULT_SERVER_URL = 'https://extension-dashboard-eight.vercel.app';
   const CANDIDATE_URLS = [
-    'https://extension-admin-phi.vercel.app',
+    'https://extension-dashboard-eight.vercel.app',
     'http://localhost:3001',
     'http://localhost:3000',
   ];
@@ -120,11 +120,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           email: userEmail,
           domain: currentDomain,
         }),
-      }).catch(() => {});
+      }).catch(() => { });
 
       // Notify content script to reconnect
       if (activeTabId) {
-        chrome.tabs.sendMessage(activeTabId, { action: 'refresh_overlay' }).catch(() => {});
+        chrome.tabs.sendMessage(activeTabId, { action: 'refresh_overlay' }).catch(() => { });
       }
     });
   });
@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeTabId) {
       try {
         await chrome.tabs.sendMessage(activeTabId, { action: 'refresh_overlay' });
-      } catch (e) {}
+      } catch (e) { }
     }
     setTimeout(() => {
       forceRefreshBtn.innerText = 'Sync Overlay';

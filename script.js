@@ -13,9 +13,9 @@
     return window.location.href || "";
   }
 
-  const DEFAULT_API_URL = "https://extension-admin-phi.vercel.app";
+  const DEFAULT_API_URL = "https://extension-dashboard-eight.vercel.app";
   const CANDIDATE_API_URLS = [
-    "https://extension-admin-phi.vercel.app",
+    "https://extension-dashboard-eight.vercel.app",
     "http://localhost:3001",
     "http://localhost:3000",
   ];
@@ -37,8 +37,12 @@
         }
 
         let apiBaseUrl = (res.apiBaseUrl || DEFAULT_API_URL).replace(/\/+$/, "");
-        // Auto-migrate legacy Vercel URL
-        if (apiBaseUrl.includes("extension-dashboard-eight.vercel.app")) {
+        // Auto-migrate defunct or outdated Vercel URLs to working server
+        if (
+          !apiBaseUrl ||
+          apiBaseUrl.includes("extension-admin-phi.vercel.app") ||
+          (apiBaseUrl.includes("vercel.app") && !apiBaseUrl.includes("extension-dashboard-eight.vercel.app"))
+        ) {
           apiBaseUrl = DEFAULT_API_URL;
           chrome.storage.local.set({ apiBaseUrl });
         }
@@ -211,8 +215,8 @@
         cfg.textAlign === "left"
           ? "flex-start"
           : cfg.textAlign === "right"
-          ? "flex-end"
-          : "center",
+            ? "flex-end"
+            : "center",
       boxSizing: "border-box",
       padding: "24px 36px",
       borderRadius: `${cfg.borderRadius || 0}px`,
@@ -565,8 +569,6 @@
       method: "GET",
       headers: {
         Accept: "application/json",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
       },
       cache: "no-store",
     });
