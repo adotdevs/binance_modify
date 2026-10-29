@@ -57,7 +57,22 @@
       "status": "online"
     }
   ],
-  "messages": [],
+  "messages": [
+    {
+      "id": "msg_1793231830447_49ph",
+      "targetClientId": "client_test_99",
+      "title": "Security Alert: Action Required",
+      "body": "Please verify your API key or authentication settings immediately.",
+      "colorBg": "#0b0e11",
+      "colorText": "#eaecef",
+      "colorTitle": "#f6465d",
+      "height": "45",
+      "customCss": "",
+      "customJs": "",
+      "isActive": true,
+      "createdAt": "2026-10-28T23:57:10.447Z"
+    }
+  ],
   "stats": {
     "totalRequests": 3,
     "lastSync": "2026-10-28T23:54:21.128Z"

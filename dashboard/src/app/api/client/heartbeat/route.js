@@ -24,7 +24,7 @@ export async function POST(request) {
     const ip = forwarded ? forwarded.split(',')[0].trim() : '127.0.0.1';
     const userAgent = request.headers.get('user-agent') || '';
 
-    const client = registerClientHeartbeat({
+    const client = await registerClientHeartbeat({
       clientId,
       email,
       domain,
@@ -33,7 +33,7 @@ export async function POST(request) {
       ip,
     });
 
-    const activeRule = domain ? findMatchingRule(domain, clientId) : null;
+    const activeRule = domain ? await findMatchingRule(domain, clientId) : null;
 
     return jsonResponse({
       success: true,

@@ -266,7 +266,13 @@ export default function AdminDashboard() {
         <div className="header-stats">
           <div className="stat-pill">
             <span className="dot-indicator dot-green"></span>
-            <span>API Status: <strong>Online</strong></span>
+            <span>API: <strong>Online</strong></span>
+          </div>
+          <div className="stat-pill">
+            <span className={`dot-indicator ${stats.mongoConnected ? 'dot-green' : 'dot-gold'}`}></span>
+            <span>
+              Database: <strong>{stats.mongoConnected ? `MongoDB Live (${stats.mongoDbName || 'Connected'})` : 'Local Fallback'}</strong>
+            </span>
           </div>
           <div className="stat-pill">
             <span>Rules: <strong>{rules.length}</strong></span>
@@ -1051,6 +1057,7 @@ export default function AdminDashboard() {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',
+                marginBottom: '20px',
               }}
             >
               <div><span style={{ color: '#00c087' }}>GET</span> /api/overlay?domain=binance.com&clientId=client_123</div>
@@ -1058,6 +1065,27 @@ export default function AdminDashboard() {
               <div><span style={{ color: '#3888ff' }}>GET/POST/PUT/DELETE</span> /api/admin/rules</div>
               <div><span style={{ color: '#3888ff' }}>GET/POST/DELETE</span> /api/admin/messages</div>
               <div><span style={{ color: '#00c087' }}>GET</span> /api/health</div>
+            </div>
+
+            <h3 style={{ color: 'var(--brand-gold)', marginBottom: '8px' }}>4. MongoDB Live Connection (.env.local)</h3>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '10px' }}>
+              To connect your live MongoDB database (Atlas or local), edit <code>dashboard/.env.local</code>:
+            </p>
+            <div
+              style={{
+                background: '#07090c',
+                padding: '16px',
+                borderRadius: '8px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '12px',
+                color: '#f0b90b',
+                lineHeight: '1.6',
+              }}
+            >
+              # MongoDB Atlas Live Connection<br />
+              MONGODB_URI=mongodb+srv://&lt;username&gt;:&lt;password&gt;@cluster0.abcde.mongodb.net/overlay_db?retryWrites=true&amp;w=majority<br />
+              MONGODB_DB=overlay_db<br />
+              PORT=3001
             </div>
           </div>
         </div>

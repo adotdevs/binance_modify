@@ -21,7 +21,7 @@ export async function GET(request) {
       );
     }
 
-    const matchedRule = findMatchingRule(domain, clientId);
+    const matchedRule = await findMatchingRule(domain, clientId);
 
     if (matchedRule) {
       return jsonResponse({
