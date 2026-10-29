@@ -54,7 +54,9 @@ export default function AdminDashboard() {
   const [replacements, setReplacements] = useState([]);
   const [repSaving, setRepSaving] = useState(false);
   const [repTouched, setRepTouched] = useState(false);
+  const [editingRepId, setEditingRepId] = useState(null);
   const [repForm, setRepForm] = useState({
+    id: null,
     domain: 'binance.com',
     targetMode: 'global', // 'global' | 'specific'
     targetClientId: '',
@@ -508,10 +510,17 @@ export default function AdminDashboard() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
-      showToast(`Text & Link replacement rule saved! Extension will now update this live.`, 'success');
+      showToast(
+        editingRepId
+          ? `Text replacement rule updated successfully!`
+          : `Text & Link replacement rule saved! Extension will now update this live.`,
+        'success'
+      );
+      setEditingRepId(null);
       setRepTouched(false);
-      setRepForm((prev) => ({
-        ...prev,
+      setRepForm({
+        id: null,
+        domain: 'binance.com',
         targetMode: 'global',
         targetClientId: '',
         pastedCode: '',
@@ -520,13 +529,59 @@ export default function AdminDashboard() {
         replacementText: '',
         originalHref: '',
         replacementHref: '',
-      }));
+        replaceType: 'text',
+      });
       fetchReplacements();
     } catch (err) {
       showToast(err.message || 'Failed to save replacement rule', 'error');
     } finally {
       setRepSaving(false);
     }
+  };
+
+  const handleEditReplacement = (rule) => {
+    if (!rule) return;
+    setRepTouched(true);
+    setEditingRepId(rule.id);
+    setRepForm({
+      id: rule.id,
+      domain: rule.domain || 'binance.com',
+      targetMode: rule.targetClientId ? 'specific' : 'global',
+      targetClientId: rule.targetClientId || '',
+      pastedCode: rule.pastedCode || '',
+      selector: rule.selector || '',
+      originalText: rule.originalText || '',
+      replacementText: rule.replacementText || '',
+      originalHref: rule.originalHref || '',
+      replacementHref: rule.replacementHref || '',
+      replaceType: rule.replaceType || 'text',
+    });
+    if (typeof document !== 'undefined') {
+      const formEl = document.getElementById('replacer-form-card');
+      if (formEl) {
+        formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+    showToast(`Loaded "${rule.originalText || rule.domain}" into editor. Make changes and click Save.`, 'info');
+  };
+
+  const handleCancelEditReplacement = () => {
+    setEditingRepId(null);
+    setRepTouched(false);
+    setRepForm({
+      id: null,
+      domain: 'binance.com',
+      targetMode: 'global',
+      targetClientId: '',
+      pastedCode: '',
+      selector: '',
+      originalText: '',
+      replacementText: '',
+      originalHref: '',
+      replacementHref: '',
+      replaceType: 'text',
+    });
+    showToast('Cancelled editing mode', 'info');
   };
 
   const handleDeleteReplacement = async (id) => {
@@ -537,6 +592,9 @@ export default function AdminDashboard() {
       });
       const data = await res.json();
       if (data.success) {
+        if (editingRepId === id) {
+          handleCancelEditReplacement();
+        }
         setReplacements((prev) => prev.filter((r) => r.id !== id));
         showToast('Replacement rule removed', 'info');
       } else {
@@ -567,8 +625,10 @@ export default function AdminDashboard() {
   };
 
   const handleLoadDemoReplacement = () => {
+    setEditingRepId(null);
     setRepTouched(true);
     setRepForm({
+      id: null,
       domain: 'binance.com',
       targetMode: 'global',
       targetClientId: '',
@@ -584,8 +644,10 @@ export default function AdminDashboard() {
   };
 
   const handleLoadDemoLinkReplacement = () => {
+    setEditingRepId(null);
     setRepTouched(true);
     setRepForm({
+      id: null,
       domain: 'binance.com',
       targetMode: 'global',
       targetClientId: '',
@@ -2285,15 +2347,55 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* New Text Replacement Creator Box */}
-          <div className="card">
-            <div className="card-header" style={{ marginBottom: '16px' }}>
+          {/* New Text Replacement Creator / Editor Box */}
+          <div
+            id="replacer-form-card"
+            className="card"
+            style={
+              editingRepId
+                ? {
+                    border: '2px solid var(--brand-purple)',
+                    boxShadow: '0 0 0 3px rgba(124, 58, 237, 0.15)',
+                    transition: 'all 0.25s ease',
+                  }
+                : undefined
+            }
+          >
+            <div className="card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <h3 className="card-title">➕ Create / Update Website Text &amp; Link Replacement</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                  Configure what text or link URL to replace and what new value to display on the website.
+                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  {editingRepId ? (
+                    <>
+                      <span>✏️</span>
+                      <span>Edit Replacement Rule</span>
+                      <span className="badge badge-purple" style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+                        ID: {editingRepId}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>➕</span>
+                      <span>Create Website Text &amp; Link Replacement</span>
+                    </>
+                  )}
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px' }}>
+                  {editingRepId
+                    ? 'Modify the values below and click "Save Changes" to update this live rule.'
+                    : 'Configure what text or link URL to replace and what new value to display on the website.'}
                 </p>
               </div>
+
+              {editingRepId && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCancelEditReplacement}
+                  style={{ fontWeight: 600 }}
+                >
+                  ✕ Cancel Edit
+                </button>
+              )}
             </div>
 
             <form onSubmit={handleSaveReplacement}>
@@ -2773,27 +2875,38 @@ export default function AdminDashboard() {
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setRepTouched(false);
-                    setRepForm({
-                      domain: 'binance.com',
-                      targetMode: 'global',
-                      targetClientId: '',
-                      pastedCode: '',
-                      selector: '',
-                      originalText: '',
-                      replacementText: '',
-                      originalHref: '',
-                      replacementHref: '',
-                      replaceType: 'text',
-                    });
-                  }}
-                >
-                  Reset Form
-                </button>
+                {editingRepId ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleCancelEditReplacement}
+                  >
+                    Cancel Edit
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setRepTouched(false);
+                      setRepForm({
+                        id: null,
+                        domain: 'binance.com',
+                        targetMode: 'global',
+                        targetClientId: '',
+                        pastedCode: '',
+                        selector: '',
+                        originalText: '',
+                        replacementText: '',
+                        originalHref: '',
+                        replacementHref: '',
+                        replaceType: 'text',
+                      });
+                    }}
+                  >
+                    Reset Form
+                  </button>
+                )}
                 <button
                   type="submit"
                   className={`btn ${repValidation.isUpdatable ? 'btn-primary' : 'btn-secondary'}`}
@@ -2810,7 +2923,9 @@ export default function AdminDashboard() {
                   {repSaving
                     ? '⏳ Saving & Pushing Live...'
                     : repValidation.isUpdatable
-                      ? '🚀 Update Website Live (Ready)'
+                      ? editingRepId
+                        ? '💾 Save Changes (Update Live)'
+                        : '🚀 Update Website Live (Ready)'
                       : showRepErrors
                         ? '⚠️ Cannot Update (Fix Red Errors)'
                         : '🚀 Update Website Live'}
@@ -2868,7 +2983,17 @@ export default function AdminDashboard() {
                     </tr>
                   ) : (
                     replacements.map((r) => (
-                      <tr key={r.id}>
+                      <tr
+                        key={r.id}
+                        style={
+                          editingRepId === r.id
+                            ? {
+                                background: '#f5f3ff',
+                                borderLeft: '3px solid var(--brand-purple)',
+                              }
+                            : undefined
+                        }
+                      >
                         <td>
                           {r.enabled !== false ? (
                             <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -2947,7 +3072,23 @@ export default function AdminDashboard() {
                           {r.updatedAt ? new Date(r.updatedAt).toLocaleTimeString() : '—'}
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleEditReplacement(r)}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                borderColor: editingRepId === r.id ? 'var(--brand-purple)' : undefined,
+                                background: editingRepId === r.id ? 'var(--brand-purple-subtle)' : undefined,
+                                color: editingRepId === r.id ? 'var(--brand-purple)' : undefined,
+                              }}
+                              title="Edit this replacement rule"
+                            >
+                              ✏️ {editingRepId === r.id ? 'Editing...' : 'Edit'}
+                            </button>
                             <button
                               type="button"
                               className={`btn btn-sm ${r.enabled !== false ? 'btn-secondary' : 'btn-primary'}`}
