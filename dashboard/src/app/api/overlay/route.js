@@ -30,7 +30,10 @@ export async function GET(request) {
         domain,
         clientId,
         rule: matchedRule,
-        overlay: matchedRule.overlay,
+        overlay: {
+          ...matchedRule.overlay,
+          enabled: matchedRule.enabled !== false,
+        },
         updatedAt: matchedRule.updatedAt,
       });
     }

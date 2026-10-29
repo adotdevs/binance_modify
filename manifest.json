@@ -1,20 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Dynamic Multi-Domain Remote Overlay",
+  "name": "Binance Remote Overlay",
   "version": "6.0.0",
-  "description": "Dynamic remote overlay and custom code injector managed via Next.js Admin Panel",
+  "description": "Remote managed dynamic overlay for Binance and custom domains",
   "permissions": [
     "storage",
-    "alarms",
-    "activeTab"
+    "alarms"
   ],
   "host_permissions": [
     "*://*/*"
   ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Remote Overlay Controller"
-  },
   "background": {
     "service_worker": "background.js"
   },

