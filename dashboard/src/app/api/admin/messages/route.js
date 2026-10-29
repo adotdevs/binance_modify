@@ -1,5 +1,6 @@
 import { jsonResponse, handleOptions } from '@/lib/cors';
 import { getMessages, createMessage, deleteMessage } from '@/lib/db';
+import { broadcastUpdate } from '@/lib/events';
 
 export async function OPTIONS() {
   return handleOptions();
@@ -38,6 +39,8 @@ export async function POST(request) {
       customJs,
     });
 
+    broadcastUpdate({ type: 'message_dispatched', message: newMsg });
+
     return jsonResponse({ success: true, message: newMsg }, 201);
   } catch (error) {
     return jsonResponse({ success: false, error: error.message }, 500);
@@ -54,6 +57,7 @@ export async function DELETE(request) {
     }
 
     await deleteMessage(id);
+    broadcastUpdate({ type: 'message_deleted', id });
     return jsonResponse({ success: true, deletedId: id });
   } catch (error) {
     return jsonResponse({ success: false, error: error.message }, 500);

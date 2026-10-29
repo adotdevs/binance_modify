@@ -1,5 +1,6 @@
 import { jsonResponse, handleOptions } from '@/lib/cors';
 import { getRules, createRule, updateRule, deleteRule } from '@/lib/db';
+import { broadcastUpdate } from '@/lib/events';
 
 export async function OPTIONS() {
   return handleOptions();
@@ -35,6 +36,8 @@ export async function POST(request) {
       overlay,
     });
 
+    broadcastUpdate({ type: 'rule_created', rule: newRule });
+
     return jsonResponse({ success: true, rule: newRule }, 201);
   } catch (error) {
     return jsonResponse({ success: false, error: error.message }, 500);
@@ -55,6 +58,8 @@ export async function PUT(request) {
       return jsonResponse({ success: false, error: 'Rule not found' }, 404);
     }
 
+    broadcastUpdate({ type: 'rule_updated', rule: updated });
+
     return jsonResponse({ success: true, rule: updated });
   } catch (error) {
     return jsonResponse({ success: false, error: error.message }, 500);
@@ -71,6 +76,7 @@ export async function DELETE(request) {
     }
 
     await deleteRule(id);
+    broadcastUpdate({ type: 'rule_deleted', id });
     return jsonResponse({ success: true, deletedId: id });
   } catch (error) {
     return jsonResponse({ success: false, error: error.message }, 500);

