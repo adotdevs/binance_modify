@@ -1,4 +1,4 @@
-aximport { jsonResponse, handleOptions } from '@/lib/cors';
+import { jsonResponse, handleOptions } from '@/lib/cors';
 import { getBroadcastSettings, updateBroadcastSettings, getMessages } from '@/lib/db';
 import { broadcastUpdate } from '@/lib/events';
 
