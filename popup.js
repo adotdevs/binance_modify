@@ -10,9 +10,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const copyIdBtn = document.getElementById('copy-id-btn');
   const openDashboardBtn = document.getElementById('open-dashboard-btn');
 
-  const DEFAULT_SERVER_URL = 'https://extension-dashboard-eight.vercel.app';
+  const DEFAULT_SERVER_URL = 'https://extension-admin-phi.vercel.app';
   const CANDIDATE_URLS = [
-    'https://extension-dashboard-eight.vercel.app',
+    'https://extension-admin-phi.vercel.app',
     'http://localhost:3001',
     'http://localhost:3000',
   ];
@@ -49,8 +49,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       userEmailInput.value = stored.userEmail;
     }
 
-    // Default to production Vercel server if not configured
-    if (!apiBaseUrl) {
+    // Auto-migrate legacy or empty URL to current production server
+    if (!apiBaseUrl || apiBaseUrl.includes('extension-dashboard-eight.vercel.app')) {
       apiBaseUrl = DEFAULT_SERVER_URL;
       chrome.storage.local.set({ apiBaseUrl });
     }
@@ -68,14 +68,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     ruleStatusEl.innerText = 'Checking...';
 
     try {
-      const healthRes = await fetch(`${apiUrl}/api/health`, { method: 'GET' });
+      const healthRes = await fetch(`${apiUrl}/api/health`, { method: 'GET', cache: 'no-store' });
       if (!healthRes.ok) throw new Error('API unreachable');
 
       statusBadge.className = 'badge badge-online';
       statusBadge.innerText = 'Online';
 
       if (domain) {
-        const overlayRes = await fetch(`${apiUrl}/api/overlay?domain=${encodeURIComponent(domain)}&clientId=${clientId}`);
+        const overlayRes = await fetch(
+          `${apiUrl}/api/overlay?domain=${encodeURIComponent(domain)}&clientId=${encodeURIComponent(clientId)}&_t=${Date.now()}`,
+          { cache: 'no-store' }
+        );
         const overlayData = await overlayRes.json();
 
         if (overlayData.matched && overlayData.rule) {
@@ -107,15 +110,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       checkBackend(apiBaseUrl, clientId, currentDomain);
 
+      // Trigger immediate heartbeat
       fetch(`${apiBaseUrl}/api/client/heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           clientId,
           email: userEmail,
           domain: currentDomain,
         }),
-      }).catch(() => { });
+      }).catch(() => {});
+
+      // Notify content script to reconnect
+      if (activeTabId) {
+        chrome.tabs.sendMessage(activeTabId, { action: 'refresh_overlay' }).catch(() => {});
+      }
     });
   });
 
@@ -125,7 +135,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeTabId) {
       try {
         await chrome.tabs.sendMessage(activeTabId, { action: 'refresh_overlay' });
-      } catch (e) { }
+      } catch (e) {}
     }
     setTimeout(() => {
       forceRefreshBtn.innerText = 'Sync Overlay';

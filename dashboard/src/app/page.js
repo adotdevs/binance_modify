@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('rules'); // rules | preview | clients | messages | docs
+  const [activeTab, setActiveTab] = useState('rules'); // rules | preview | clients | settings | docs
   const [rules, setRules] = useState([]);
   const [clients, setClients] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -11,6 +11,26 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+
+  // Admin Authentication & Login Protection State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [adminUser, setAdminUser] = useState(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Profile Settings Form State
+  const [profileForm, setProfileForm] = useState({
+    name: 'Super Admin',
+    email: '',
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const hasInitializedRef = useRef(false);
 
@@ -147,56 +167,9 @@ export default function AdminDashboard() {
   };
 
   // Fetch initial data
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch('/api/admin/rules');
-      const data = await res.json();
-
-      if (data.success) {
-        setRules(data.rules || []);
-        setClients(data.clients || []);
-        setMessages(data.messages || []);
-        setStats(data.stats || {});
-
-        if (!hasInitializedRef.current && data.rules && data.rules.length > 0) {
-          hasInitializedRef.current = true;
-          handleSelectRule(data.rules[0]);
-        }
-      }
-    } catch (err) {
-      showToast('Failed to load rules and clients', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchClientsAndStats = async () => {
-    try {
-      const res = await fetch('/api/admin/clients');
-      const data = await res.json();
-      if (data.success) {
-        setClients(data.clients || []);
-        setStats((prev) => ({
-          ...prev,
-          onlineClients: data.onlineClients || 0,
-          totalClients: data.totalClients || 0,
-        }));
-      }
-
-      const msgRes = await fetch('/api/admin/messages');
-      const msgData = await msgRes.json();
-      if (msgData.success) {
-        setMessages(msgData.messages || []);
-      }
-    } catch (e) {}
-  };
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchClientsAndStats, 8000);
-    return () => clearInterval(interval);
-  }, []);
+  const [broadcastsEnabled, setBroadcastsEnabled] = useState(true);
+  const [broadcastsList, setBroadcastsList] = useState([]);
+  const [broadcastLoading, setBroadcastLoading] = useState(false);
 
   // When a rule is selected from sidebar/chips
   const handleSelectRule = (rule) => {
@@ -272,6 +245,234 @@ export default function AdminDashboard() {
       },
     });
   };
+
+  // Fetch initial rules
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/admin/rules');
+      const data = await res.json();
+
+      if (data.success) {
+        const validRules = (data.rules || []).filter((r) => r.domain !== '*' && r.id !== 'rule-global-fallback');
+        setRules(validRules);
+
+        if (!hasInitializedRef.current && validRules.length > 0) {
+          hasInitializedRef.current = true;
+          handleSelectRule(validRules[0]);
+        }
+      }
+    } catch (err) {
+      showToast('Failed to load rules', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Live dynamic polling for clients, alerts, and broadcasts
+  const fetchClientsAndStats = async () => {
+    try {
+      const [clientRes, msgRes, bRes] = await Promise.all([
+        fetch('/api/admin/clients'),
+        fetch('/api/admin/messages'),
+        fetch('/api/admin/broadcasts'),
+      ]);
+
+      const clientData = await clientRes.json();
+      if (clientData.success) {
+        const liveClients = clientData.clients || [];
+        setClients(liveClients);
+        const liveOnline = liveClients.filter((c) => c.isOnline || c.status === 'online').length;
+        setStats((prev) => ({
+          ...prev,
+          onlineClients: clientData.onlineClients ?? liveOnline,
+          totalClients: clientData.totalClients ?? liveClients.length,
+        }));
+      }
+
+      const msgData = await msgRes.json();
+      if (msgData.success) {
+        setMessages(msgData.messages || []);
+      }
+
+      const bData = await bRes.json();
+      if (bData.success) {
+        setBroadcastsEnabled(bData.broadcastsEnabled !== false);
+        setBroadcastsList(bData.broadcasts || []);
+      }
+    } catch (e) { }
+  };
+
+  // Master switch to enable or disable global broadcasts
+  const handleToggleBroadcasts = async (enable) => {
+    try {
+      setBroadcastLoading(true);
+      const res = await fetch('/api/admin/broadcasts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broadcastsEnabled: enable }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBroadcastsEnabled(data.broadcastsEnabled);
+        showToast(data.message, 'success');
+        fetchClientsAndStats();
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to toggle broadcasts', 'error');
+    } finally {
+      setBroadcastLoading(false);
+    }
+  };
+
+  // Session verification on mount
+  useEffect(() => {
+    const savedToken = typeof window !== 'undefined' ? localStorage.getItem('overlay_admin_token') : null;
+    const savedUser = typeof window !== 'undefined' ? localStorage.getItem('overlay_admin_user') : null;
+    if (savedToken && savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setIsAuthenticated(true);
+        setAdminUser(parsed);
+        setProfileForm((prev) => ({
+          ...prev,
+          email: parsed.email || '',
+          name: parsed.name || 'Super Admin',
+        }));
+      } catch (e) {
+        setIsAuthenticated(false);
+      }
+    } else {
+      setIsAuthenticated(false);
+    }
+    setAuthChecking(false);
+  }, []);
+
+  // Poll only when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchData();
+    fetchClientsAndStats();
+    // Live dynamic interval every 2.5s for real-time heartbeat and alerts
+    const interval = setInterval(fetchClientsAndStats, 2500);
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
+  // Auth & Profile Handlers
+  const handleLogin = async (e) => {
+    e?.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+
+    try {
+      const res = await fetch('/api/admin/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Invalid credentials');
+      }
+
+      localStorage.setItem('overlay_admin_token', data.token);
+      localStorage.setItem('overlay_admin_user', JSON.stringify(data.admin));
+      setIsAuthenticated(true);
+      setAdminUser(data.admin);
+      setProfileForm((prev) => ({
+        ...prev,
+        email: data.admin.email,
+        name: data.admin.name || 'Super Admin',
+      }));
+      showToast(`Welcome back, ${data.admin.email}!`, 'success');
+    } catch (err) {
+      setLoginError(err.message || 'Login failed');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('overlay_admin_token');
+    localStorage.removeItem('overlay_admin_user');
+    setIsAuthenticated(false);
+    setAdminUser(null);
+    showToast('Signed out of admin dashboard', 'info');
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e?.preventDefault();
+    if (profileForm.newPassword) {
+      if (!profileForm.currentPassword) {
+        showToast('Please enter your current password to set a new password', 'error');
+        return;
+      }
+      if (profileForm.newPassword !== profileForm.confirmPassword) {
+        showToast('New passwords do not match', 'error');
+        return;
+      }
+      if (profileForm.newPassword.length < 6) {
+        showToast('New password must be at least 6 characters', 'error');
+        return;
+      }
+    }
+
+    setProfileSaving(true);
+    try {
+      const res = await fetch('/api/admin/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentEmail: adminUser?.email || '',
+          newEmail: profileForm.email,
+          name: profileForm.name,
+          currentPassword: profileForm.currentPassword,
+          newPassword: profileForm.newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update profile');
+      }
+
+      setAdminUser(data.admin);
+      localStorage.setItem('overlay_admin_user', JSON.stringify(data.admin));
+      setProfileForm((prev) => ({
+        ...prev,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      }));
+      showToast('Profile and security credentials updated in MongoDB!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to update profile', 'error');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleDeleteClient = async (clientId) => {
+    if (!clientId) return;
+    try {
+      const res = await fetch(`/api/admin/clients?clientId=${encodeURIComponent(clientId)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setClients((prev) => prev.filter((c) => c.clientId !== clientId));
+        showToast(`Client ${clientId} deleted from logs`, 'success');
+        fetchClientsAndStats();
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to delete client', 'error');
+    }
+  };
+
+
 
   // Dedicated clean modal: Create New Domain Rule
   const handleOpenAddDomainModal = () => {
@@ -916,6 +1117,86 @@ export default function AdminDashboard() {
     );
   };
 
+  if (authChecking) {
+    return (
+      <div className="login-wrapper">
+        <div style={{ textAlign: 'center', color: 'var(--brand-purple)', fontWeight: 600 }}>
+          <div className="live-pulse-dot" style={{ width: '16px', height: '16px', marginBottom: '12px' }} />
+          <div>Verifying Admin Portal Session...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="login-wrapper">
+        <div className="login-card">
+          <div className="login-brand-header">
+            <div className="login-brand-icon">🛡️</div>
+            <h1 className="login-title">Admin Dashboard Login</h1>
+            <p className="login-subtitle">Enter your credentials to manage overlays, rules, and live clients</p>
+          </div>
+
+          {loginError && (
+            <div className="login-alert-error">
+              <span>⚠️</span>
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontWeight: 600 }}>Admin Email Address</label>
+              <input
+                type="email"
+                className="form-input"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="Enter admin email"
+                required
+                style={{ padding: '12px 14px', fontSize: '14px' }}
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label className="form-label" style={{ fontWeight: 600, margin: 0 }}>Password</label>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--brand-purple)', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="form-input"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="Enter password"
+                required
+                style={{ padding: '12px 14px', fontSize: '14px' }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={loginLoading}
+              style={{ padding: '14px', fontSize: '15px', fontWeight: 700, width: '100%', marginTop: '6px' }}
+            >
+              {loginLoading ? '⏳ Authenticating...' : '🔐 Sign In to Dashboard'}
+            </button>
+          </form>
+
+
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* Toast Notification */}
@@ -952,6 +1233,22 @@ export default function AdminDashboard() {
             <span className="dot-indicator dot-green"></span>
             <span>Online Clients: <strong>{stats.onlineClients || 0}</strong></span>
           </div>
+
+          {/* Admin User Badge & Sign Out Button */}
+          <div className="stat-pill" style={{ background: 'var(--brand-purple-subtle)', borderColor: 'var(--brand-purple)' }}>
+            <span style={{ fontSize: '13px' }}>👤</span>
+            <span style={{ fontWeight: 600, color: 'var(--brand-purple)' }}>{adminUser?.email || 'Admin'}</span>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={handleLogout}
+            style={{ padding: '6px 12px', fontSize: '12px' }}
+            title="Sign out of Admin Dashboard"
+          >
+            🚪 Sign Out
+          </button>
         </div>
       </header>
 
@@ -981,6 +1278,13 @@ export default function AdminDashboard() {
         </button>
 
         <button
+          className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          <span>⚙️ Settings & Profile</span>
+        </button>
+
+        <button
           className={`tab-btn ${activeTab === 'docs' ? 'active' : ''}`}
           onClick={() => setActiveTab('docs')}
         >
@@ -1006,7 +1310,7 @@ export default function AdminDashboard() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-secondary)' }}>Target Domain:</span>
-              {rules.map((rule) => {
+              {rules.filter((r) => r.domain !== '*' && r.id !== 'rule-global-fallback').map((rule) => {
                 const isSelected = selectedRuleId === rule.id;
                 return (
                   <button
@@ -1014,45 +1318,35 @@ export default function AdminDashboard() {
                     type="button"
                     onClick={() => handleSelectRule(rule)}
                     style={{
-                      padding: '6px 14px',
+                      padding: '6px 16px',
                       borderRadius: '8px',
-                      fontSize: '12px',
+                      fontSize: '13px',
                       fontWeight: 600,
                       cursor: 'pointer',
                       background: isSelected ? 'var(--brand-purple-subtle)' : '#ffffff',
-                      border: `1px solid ${isSelected ? 'var(--brand-purple)' : 'var(--border-light)'}`,
+                      border: `1.5px solid ${isSelected ? 'var(--brand-purple)' : 'var(--border-light)'}`,
                       color: isSelected ? 'var(--brand-purple)' : 'var(--text-primary)',
                       transition: 'all 0.15s ease',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '8px',
+                      gap: '6px',
                     }}
                   >
-                    <span>{rule.domain}</span>
-                    <span
-                      style={{
-                        fontSize: '9px',
-                        padding: '2px 6px',
-                        borderRadius: '10px',
-                        background: rule.enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                        color: rule.enabled ? 'var(--brand-green)' : 'var(--brand-red)',
-                      }}
-                    >
-                      {rule.enabled ? 'ON' : 'OFF'}
-                    </span>
+                    <span>🌐 {rule.domain}</span>
                   </button>
                 );
               })}
-            </div>
 
-            {/* Clear, Dedicated "Add Domain Rule" Trigger Button */}
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={handleOpenAddDomainModal}
-            >
-              ➕ Add New Domain Rule
-            </button>
+              {/* Direct In-Line "➕ Add Domain" Button Right Next to the Pills */}
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleOpenAddDomainModal}
+                style={{ padding: '6px 16px', fontWeight: 700 }}
+              >
+                ➕ Add Domain
+              </button>
+            </div>
           </div>
 
           {/* 2 OPTIONS SELECTOR: Elementor vs Custom Coding */}
@@ -1091,19 +1385,37 @@ export default function AdminDashboard() {
               {/* Domain & Global Frame Settings */}
               <div className="builder-box">
                 <div className="builder-box-title">
-                  <span>🌐 Domain & Popup Frame</span>
-                  <label className="toggle-switch" title="Enable/Disable overlay">
-                    <input
-                      type="checkbox"
-                      checked={formData.enabled}
-                      onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: '14px' }}>🌐 Target Domain</span>
+                    <div style={{ fontSize: '11px', color: 'var(--brand-purple)', fontWeight: 600, marginTop: '2px' }}>
+                      Currently Editing: {formData.domain}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleOpenAddDomainModal}
+                      title="Add a brand new domain rule"
+                    >
+                      ➕ New Domain
+                    </button>
+                    <label className="toggle-switch" title="Enable/Disable overlay for this domain">
+                      <input
+                        type="checkbox"
+                        checked={formData.enabled}
+                        onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Match Domain Pattern:</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>Target Domain URL / Pattern:</label>
+                    <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>e.g. bybit.com or *.binance.com</span>
+                  </div>
                   <input
                     type="text"
                     className="form-input"
@@ -1111,6 +1423,9 @@ export default function AdminDashboard() {
                     onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
                     placeholder="e.g. binance.com or *.binance.com"
                   />
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    💡 Tip: Click <strong>&quot;➕ New Domain&quot;</strong> to create a new rule, or edit above and click <strong>&quot;Save&quot;</strong> below to update.
+                  </div>
                 </div>
 
                 {/* 4 Clean Position Cards */}
@@ -1624,77 +1939,188 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* TAB 3: Connected Clients & Instant Alert (Replaced targeted push with intuitive direct alert) */}
+      {/* TAB 3: Connected Clients, Broadcast Management & Instant Alert */}
       {activeTab === 'clients' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-          {/* Top Info Banner & Broadcast Button */}
+          {/* Section 1: Global Broadcasts Management & Disable Option */}
           <div className="card">
-            <div className="card-header" style={{ marginBottom: '12px' }}>
+            <div className="card-header" style={{ marginBottom: '14px' }}>
               <div>
-                <h2 className="card-title">👥 Connected Browser Extension Clients</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                  <h2 className="card-title" style={{ margin: 0 }}>📢 Global Broadcasts & Alert Control</h2>
+                  <span className={broadcastsEnabled ? 'broadcast-badge-active' : 'broadcast-badge-disabled'}>
+                    {broadcastsEnabled ? '● Broadcasts ACTIVE' : '✕ Broadcasts DISABLED'}
+                  </span>
+                </div>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                  Click <strong>&quot;Send Alert&quot;</strong> on any client to immediately pop up a custom warning, pause, or reward on their screen in real time.
+                  {broadcastsEnabled
+                    ? 'Global broadcast alerts are active. Any alert dispatched without a specific client target will display on all extension clients.'
+                    : 'Global broadcasts are currently DISABLED. Only direct 1-to-1 targeted alerts sent to specific Client IDs will display on screens.'}
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <button
-                  className="btn btn-primary btn-sm"
+                  type="button"
+                  className={`btn btn-sm ${broadcastsEnabled ? 'btn-danger' : 'btn-primary'}`}
+                  onClick={() => handleToggleBroadcasts(!broadcastsEnabled)}
+                  disabled={broadcastLoading}
+                  style={{ minWidth: '160px' }}
+                >
+                  {broadcastLoading
+                    ? '⏳ Updating...'
+                    : broadcastsEnabled
+                      ? '⛔ Disable All Broadcasts'
+                      : '✅ Enable Broadcast Delivery'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => handleOpenAlertModalForClient(null)}
                 >
-                  📢 Broadcast Alert to All Clients
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={fetchClientsAndStats}>
-                  🔄 Refresh
+                  📢 Dispatch New Broadcast
                 </button>
               </div>
             </div>
 
-            {/* Clients Table with Direct Send Alert Button */}
+            {/* Broadcast Details Banner */}
+            <div
+              style={{
+                padding: '12px 18px',
+                borderRadius: 'var(--radius-sm)',
+                background: broadcastsEnabled ? 'var(--brand-green-bg)' : 'var(--brand-red-bg)',
+                border: `1px solid ${broadcastsEnabled ? '#a7f3d0' : '#fecaca'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '13px',
+                color: broadcastsEnabled ? '#065f46' : '#991b1b',
+              }}
+            >
+              <div>
+                <strong>Current Broadcast Policy: </strong>
+                {broadcastsEnabled ? (
+                  <span>Broadcast delivery is enabled across all domains and clients.</span>
+                ) : (
+                  <span>All global broadcasts are blocked. Connected clients will strictly ignore broadcast alerts.</span>
+                )}
+              </div>
+              <div style={{ fontWeight: 600 }}>
+                Active Broadcast Messages: {broadcastsList.length}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Connected Browser Extension Clients (Always Live & Dynamic) */}
+          <div className="card">
+            <div className="card-header" style={{ marginBottom: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                  <h2 className="card-title" style={{ margin: 0 }}>👥 Connected Browser Extension Clients</h2>
+                  <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="live-pulse-dot" />
+                    {stats.onlineClients || 0} Online
+                  </span>
+                  <span className="badge badge-blue">
+                    {stats.totalClients || clients.length} Registered
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  Live dynamic heartbeat monitor (auto-refreshing every 2.5s). Click <strong>&quot;Send Alert&quot;</strong> to target a specific user directly.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="btn btn-secondary btn-sm" onClick={fetchClientsAndStats}>
+                  🔄 Sync Now
+                </button>
+              </div>
+            </div>
+
+            {/* Clients Table with Live Status & Direct Action */}
             <div className="table-wrapper">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Status</th>
+                    <th>Live Status</th>
                     <th>Client ID</th>
                     <th>Current Domain</th>
                     <th>Last Heartbeat</th>
-                    <th style={{ textAlign: 'right' }}>Direct Action</th>
+                    <th style={{ textAlign: 'right' }}>Direct 1-to-1 Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {clients.length === 0 ? (
                     <tr>
                       <td colSpan={5} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
-                        No browser extension clients connected yet. Install the unpacked extension in Chrome to see live clients here.
+                        No browser extension clients connected yet. Install the extension in Chrome to see live clients here.
                       </td>
                     </tr>
                   ) : (
                     clients.map((c) => (
                       <tr key={c.clientId}>
                         <td>
-                          <span className={`badge ${c.isOnline ? 'badge-green' : 'badge-gold'}`}>
-                            {c.isOnline ? '● Online' : '○ Idle'}
+                          {c.isOnline || c.status === 'online' ? (
+                            <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="live-pulse-dot" />
+                              Online {c.secondsAgo <= 5 ? '(Just now)' : `(${c.secondsAgo}s ago)`}
+                            </span>
+                          ) : (
+                            <span className="badge badge-gold" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="offline-dot" />
+                              Offline {c.secondsAgo > 60 ? `(${Math.round(c.secondsAgo / 60)}m ago)` : `(${c.secondsAgo}s ago)`}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }}>{c.clientId}</strong>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(c.clientId);
+                                showToast(`Copied ${c.clientId} to clipboard!`);
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                opacity: 0.6,
+                              }}
+                              title="Copy Client ID"
+                            >
+                              📋
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 600, color: 'var(--brand-purple)' }}>
+                            {c.domain || c.lastDomain || 'unknown'}
                           </span>
-                        </td>
-                        <td>
-                          <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>{c.clientId}</strong>
-                        </td>
-                        <td>
-                          <span style={{ fontWeight: 600, color: 'var(--brand-purple)' }}>{c.domain || 'unknown'}</span>
                         </td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                           {c.lastSeen ? new Date(c.lastSeen).toLocaleTimeString() : '—'}
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="client-alert-btn"
-                            onClick={() => handleOpenAlertModalForClient(c)}
-                            title={`Send direct live popup alert to ${c.clientId}`}
-                          >
-                            <span>🔔</span>
-                            <span>Send Alert</span>
-                          </button>
+                          <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="client-alert-btn"
+                              onClick={() => handleOpenAlertModalForClient(c)}
+                              title={`Send direct live popup alert ONLY to ${c.clientId}`}
+                            >
+                              <span>🔔</span>
+                              <span>Send Alert</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => handleDeleteClient(c.clientId)}
+                              title={`Delete client ${c.clientId} from records`}
+                              style={{ padding: '5px 10px', fontSize: '12px' }}
+                            >
+                              🗑 Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1704,11 +2130,11 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Active Dispatched Alerts Monitor */}
+          {/* Section 3: Active Dispatched Alerts Monitor */}
           <div className="card">
             <div className="card-header">
               <div>
-                <h3 className="card-title">🚀 Currently Dispatched Alerts</h3>
+                <h3 className="card-title">🚀 Currently Dispatched Alerts & Broadcasts</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                   These alerts are actively showing on connected client screens. Click <strong>&quot;Cancel Alert&quot;</strong> to dismiss them immediately.
                 </p>
@@ -1717,7 +2143,7 @@ export default function AdminDashboard() {
 
             {messages.length === 0 ? (
               <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                No active dispatched alerts. Click &quot;Send Alert&quot; on any client above to test direct delivery.
+                No active dispatched alerts. Click &quot;Send Alert&quot; on any client above to dispatch an alert.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1747,9 +2173,17 @@ export default function AdminDashboard() {
                           {m.title}
                         </span>
                         {m.targetClientId ? (
-                          <span className="badge badge-blue">Target: {m.targetClientId}</span>
+                          <span className="badge badge-blue">🎯 DIRECT TO: {m.targetClientId}</span>
                         ) : (
-                          <span className="badge badge-gold">Broadcast (All)</span>
+                          <span className="badge badge-gold">📢 GLOBAL BROADCAST</span>
+                        )}
+                        {!m.targetClientId && !broadcastsEnabled && (
+                          <span className="badge badge-danger">⏸ Paused (Broadcasts Disabled)</span>
+                        )}
+                        {m.targetClientId && (
+                          <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                            ● Only visible to {m.targetClientId}
+                          </span>
                         )}
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                           {new Date(m.createdAt).toLocaleTimeString()}
@@ -1776,7 +2210,111 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* TAB 4: Documentation & Setup Guide */}
+      {/* TAB 4: Admin Profile & Security Settings */}
+      {activeTab === 'settings' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', maxWidth: '840px', margin: '0 auto' }}>
+          <div className="card">
+            <div className="card-header" style={{ marginBottom: '18px' }}>
+              <div>
+                <h2 className="card-title">👤 Admin Profile & Security Settings</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  Update your administrative email and password stored securely.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontWeight: 600 }}>Admin Display Name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={profileForm.name}
+                  onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                  placeholder="Super Admin"
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontWeight: 600 }}>Admin Email Address</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  value={profileForm.email}
+                  onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                  placeholder="Enter admin email"
+                  required
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  This email is used to log into the admin portal.
+                </span>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '18px', marginTop: '6px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                  🔐 Change Password
+                </h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                  Leave password fields blank if you only wish to change your email address.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Current Password (Required for changes)</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      value={profileForm.currentPassword}
+                      onChange={(e) => setProfileForm({ ...profileForm, currentPassword: e.target.value })}
+                      placeholder="Enter current password"
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">New Password</label>
+                      <input
+                        type="password"
+                        className="form-input"
+                        value={profileForm.newPassword}
+                        onChange={(e) => setProfileForm({ ...profileForm, newPassword: e.target.value })}
+                        placeholder="At least 6 characters"
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Confirm New Password</label>
+                      <input
+                        type="password"
+                        className="form-input"
+                        value={profileForm.confirmPassword}
+                        onChange={(e) => setProfileForm({ ...profileForm, confirmPassword: e.target.value })}
+                        placeholder="Confirm new password"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={profileSaving}
+                  style={{ padding: '12px 28px', fontSize: '14px', fontWeight: 700 }}
+                >
+                  {profileSaving ? '⏳ Saving Changes...' : '💾 Save Profile & Password'}
+                </button>
+              </div>
+            </form>
+
+            {/* Database Security Info Box */}
+
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: Documentation & Setup Guide */}
       {activeTab === 'docs' && (
         <div className="card">
           <div className="card-header">
@@ -1937,6 +2475,52 @@ export default function AdminDashboard() {
 
             <form onSubmit={handleSendDirectAlert}>
               <div className="modal-body">
+                {/* Strict Targeting Notice Banner */}
+                {alertTargetClient ? (
+                  <div
+                    style={{
+                      background: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: '8px',
+                      padding: '10px 14px',
+                      fontSize: '13px',
+                      color: '#1e40af',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                    }}
+                  >
+                    <span style={{ fontSize: '18px' }}>🎯</span>
+                    <div>
+                      <strong>Strict 1-to-1 Client Isolation:</strong> This popup will be sent <strong>EXCLUSIVELY</strong> to client <code>{alertTargetClient.clientId}</code>. No other client will ever see this alert.
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      background: broadcastsEnabled ? '#fffbeb' : '#fef2f2',
+                      border: `1px solid ${broadcastsEnabled ? '#fde68a' : '#fecaca'}`,
+                      borderRadius: '8px',
+                      padding: '10px 14px',
+                      fontSize: '13px',
+                      color: broadcastsEnabled ? '#92400e' : '#991b1b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                    }}
+                  >
+                    <span style={{ fontSize: '18px' }}>📢</span>
+                    <div>
+                      <strong>Global Broadcast Alert:</strong> This alert will be broadcast to <strong>ALL connected clients</strong> across all websites.
+                      {!broadcastsEnabled && (
+                        <div style={{ fontWeight: 700, marginTop: '2px', color: '#dc2626' }}>
+                          ⚠️ Note: Global broadcasts are currently DISABLED in settings.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* 1-Click Alert Presets */}
                 <div>
                   <label className="form-label">1-Click Alert Presets:</label>
@@ -2096,10 +2680,10 @@ export default function AdminDashboard() {
                       alertForm.variant === 'danger'
                         ? '#ef4444'
                         : alertForm.variant === 'success'
-                        ? '#10b981'
-                        : alertForm.variant === 'info'
-                        ? '#3b82f6'
-                        : '#f0b90b';
+                          ? '#10b981'
+                          : alertForm.variant === 'info'
+                            ? '#3b82f6'
+                            : '#f0b90b';
 
                     const isTop = alertForm.position === 'top';
 

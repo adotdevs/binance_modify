@@ -29,9 +29,13 @@ export async function GET(request) {
         matched: true,
         domain,
         clientId,
+        targetClientId: matchedRule.targetClientId || null,
+        isBroadcast: Boolean(matchedRule.isBroadcast),
         rule: matchedRule,
         overlay: {
           ...matchedRule.overlay,
+          targetClientId: matchedRule.targetClientId || null,
+          isBroadcast: Boolean(matchedRule.isBroadcast),
           enabled: matchedRule.enabled !== false,
         },
         updatedAt: matchedRule.updatedAt,
