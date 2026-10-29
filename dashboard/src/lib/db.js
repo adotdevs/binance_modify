@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getDatabase } from './mongodb';
 
+const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
 
@@ -71,6 +72,7 @@ console.log('[RemoteOverlay] Active on Binance domain:', window.location.hostnam
 let hasSeededMongo = false;
 
 function ensureLocalDb() {
+  if (IS_SERVERLESS) return;
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -78,12 +80,11 @@ function ensureLocalDb() {
     if (!fs.existsSync(DATA_FILE)) {
       fs.writeFileSync(DATA_FILE, JSON.stringify(INITIAL_DATA, null, 2), 'utf-8');
     }
-  } catch (err) {
-    // Serverless environments like Vercel have a read-only filesystem
-  }
+  } catch (err) {}
 }
 
 function getLocalDb() {
+  if (IS_SERVERLESS) return INITIAL_DATA;
   ensureLocalDb();
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
@@ -94,12 +95,11 @@ function getLocalDb() {
 }
 
 function saveLocalDb(data) {
+  if (IS_SERVERLESS) return;
   try {
     ensureLocalDb();
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    // Read-only filesystem on serverless; safely ignore
-  }
+  } catch (err) {}
 }
 
 // Seed initial rules into MongoDB if empty
@@ -108,10 +108,8 @@ async function seedMongoIfEmpty(db) {
   try {
     const count = await db.collection('rules').countDocuments();
     if (count === 0) {
-      const local = getLocalDb();
-      const seedRules = local.rules && local.rules.length > 0 ? local.rules : INITIAL_DATA.rules;
-      await db.collection('rules').insertMany(seedRules);
-      console.log(`[MongoDB] Initialized collection 'rules' with ${seedRules.length} seed documents.`);
+      await db.collection('rules').insertMany(INITIAL_DATA.rules);
+      console.log(`[MongoDB] Initialized collection 'rules' with default seed documents.`);
     }
     hasSeededMongo = true;
   } catch (err) {
@@ -185,6 +183,7 @@ export async function createRule(ruleData) {
 
   if (isLive) {
     await db.collection('rules').insertOne({ ...newRule });
+    return newRule;
   }
 
   const local = getLocalDb();
@@ -215,7 +214,7 @@ export async function updateRule(id, updates) {
       };
       delete merged._id;
       await db.collection('rules').updateOne({ id }, { $set: merged });
-      updatedRule = merged;
+      return merged;
     }
   }
 
@@ -232,7 +231,7 @@ export async function updateRule(id, updates) {
       updatedAt,
     };
     saveLocalDb(local);
-    if (!updatedRule) updatedRule = local.rules[index];
+    updatedRule = local.rules[index];
   }
 
   return updatedRule;
@@ -242,6 +241,7 @@ export async function deleteRule(id) {
   const { db, isLive } = await getDatabase();
   if (isLive) {
     await db.collection('rules').deleteOne({ id });
+    return true;
   }
 
   const local = getLocalDb();
@@ -359,6 +359,7 @@ export async function registerClientHeartbeat({ clientId, email, domain, current
       { $set: clientInfo },
       { upsert: true }
     );
+    return clientInfo;
   }
 
   const local = getLocalDb();
@@ -434,6 +435,7 @@ export async function createMessage(msgData) {
 
   if (isLive) {
     await db.collection('messages').insertOne({ ...newMsg });
+    return newMsg;
   }
 
   const local = getLocalDb();
@@ -448,6 +450,7 @@ export async function deleteMessage(id) {
   const { db, isLive } = await getDatabase();
   if (isLive) {
     await db.collection('messages').deleteOne({ id });
+    return true;
   }
   const local = getLocalDb();
   local.messages = (local.messages || []).filter((m) => m.id !== id);
@@ -473,13 +476,7 @@ async function recordRequestStats() {
     }
   } catch (e) {}
 
-  try {
-    const local = getLocalDb();
-    local.stats = local.stats || { totalRequests: 0 };
-    local.stats.totalRequests = (local.stats.totalRequests || 0) + 1;
-    local.stats.lastSync = now;
-    saveLocalDb(local);
-  } catch (e) {}
+  saveLocalDb({ stats: { totalRequests: 1, lastSync: now } });
 }
 
 export async function getStats() {
