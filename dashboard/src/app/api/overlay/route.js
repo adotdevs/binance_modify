@@ -23,7 +23,7 @@ export async function GET(request) {
 
     const [matchedRule, replacements] = await Promise.all([
       findMatchingRule(domain, clientId),
-      getReplacements(domain),
+      getReplacements(domain, clientId),
     ]);
 
     if (matchedRule) {

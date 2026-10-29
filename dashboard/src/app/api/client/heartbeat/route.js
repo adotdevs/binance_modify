@@ -21,7 +21,15 @@ export async function POST(request) {
     }
 
     const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded ? forwarded.split(',')[0].trim() : '127.0.0.1';
+    const realIp = request.headers.get('x-real-ip');
+    const cfIp = request.headers.get('cf-connecting-ip');
+    let headerIp = cfIp || realIp || (forwarded ? forwarded.split(',')[0].trim() : null);
+
+    // Prefer client reported public IP or header IP, fallback to 127.0.0.1
+    let ip = headerIp;
+    if (!ip || ip === '::1' || ip === '127.0.0.1') {
+      ip = body.ip || headerIp || '127.0.0.1';
+    }
     const userAgent = request.headers.get('user-agent') || '';
 
     const client = await registerClientHeartbeat({

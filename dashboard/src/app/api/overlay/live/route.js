@@ -31,7 +31,7 @@ export async function GET(request) {
       try {
         const [initialRule, initialReplacements] = await Promise.all([
           domain ? findMatchingRule(domain, clientId) : null,
-          domain ? getReplacements(domain) : [],
+          domain ? getReplacements(domain, clientId) : [],
         ]);
 
         if (initialRule) {
@@ -71,7 +71,7 @@ export async function GET(request) {
         try {
           const [updatedRule, updatedReplacements] = await Promise.all([
             domain ? findMatchingRule(domain, clientId) : null,
-            domain ? getReplacements(domain) : [],
+            domain ? getReplacements(domain, clientId) : [],
           ]);
 
           if (updatedRule) {

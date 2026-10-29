@@ -57,7 +57,23 @@
     });
   }
 
-  // 2. Client Heartbeat (Always Live & Dynamic)
+  // 2. Client Heartbeat (Always Live & Dynamic with Public IP Discovery)
+  let cachedClientIp = null;
+  async function resolveClientIp() {
+    if (cachedClientIp) return cachedClientIp;
+    try {
+      const res = await fetch("https://api.ipify.org?format=json", { cache: "force-cache" });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.ip) {
+          cachedClientIp = json.ip;
+          return cachedClientIp;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
   async function sendHeartbeat(apiUrl, clientId, userEmail) {
     const domain = getCurrentDomain();
     // Never send heartbeat or add logs for local, localhost, or dashboard domains
@@ -74,6 +90,7 @@
     }
 
     try {
+      const detectedIp = await resolveClientIp();
       await fetch(`${apiUrl}/api/client/heartbeat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -83,6 +100,7 @@
           email: userEmail,
           domain: domain,
           currentUrl: getCurrentUrl(),
+          ip: detectedIp || undefined,
         }),
       });
     } catch (e) {
@@ -564,10 +582,12 @@
   // LIVE IN-PAGE DOM TEXT & HTML REPLACER (With MutationObserver)
   // =========================================================================
   let activeReplacements = [];
+  let currentClientId = null;
   let domObserver = null;
   let isReplacing = false;
 
-  function setLiveReplacements(replacements) {
+  function setLiveReplacements(replacements, myClientId) {
+    if (myClientId) currentClientId = myClientId;
     activeReplacements = Array.isArray(replacements) ? replacements : [];
     if (activeReplacements.length > 0) {
       applyDomReplacements();
@@ -584,33 +604,73 @@
       activeReplacements.forEach((rule) => {
         if (rule.enabled === false) return;
 
+        // Strict 1-to-1 client isolation for replacements targeted to specific user
+        if (rule.targetClientId && rule.targetClientId.trim()) {
+          if (currentClientId && rule.targetClientId.trim() !== currentClientId) {
+            return;
+          }
+        }
+
         const original = (rule.originalText || "").trim();
         const replacement = rule.replacementText !== undefined ? String(rule.replacementText) : "";
         const selector = (rule.selector || "").trim();
+        const originalHref = (rule.originalHref || "").trim();
+        const replacementHref = (rule.replacementHref || "").trim();
         const isHtml = rule.replaceType === "html";
+
+        // Helper to update href on an anchor or make element redirect
+        const applyHrefToElement = (targetEl) => {
+          if (!replacementHref || !targetEl) return;
+          const anchor = targetEl.tagName && targetEl.tagName.toLowerCase() === "a" ? targetEl : (targetEl.closest("a") || targetEl.querySelector("a"));
+          if (anchor) {
+            if (anchor.getAttribute("href") !== replacementHref) {
+              anchor.setAttribute("href", replacementHref);
+              anchor.href = replacementHref;
+              anchor.setAttribute("data-overlay-replaced", "true");
+            }
+          } else {
+            targetEl.style.cursor = "pointer";
+            if (!targetEl._hasOverlayLinkClick) {
+              targetEl._hasOverlayLinkClick = true;
+              targetEl.addEventListener("click", (evt) => {
+                evt.preventDefault();
+                evt.stopPropagation();
+                window.location.href = replacementHref;
+              });
+              targetEl.setAttribute("data-overlay-replaced", "true");
+            }
+          }
+        };
 
         // 1. Selector-based replacement (if selector provided)
         if (selector) {
           try {
             const elements = document.querySelectorAll(selector);
             elements.forEach((el) => {
-              if (isHtml) {
-                if (el.innerHTML !== replacement) {
-                  el.innerHTML = replacement;
-                  el.setAttribute("data-overlay-replaced", "true");
-                }
-              } else {
-                if (original) {
-                  if (el.textContent && el.textContent.includes(original)) {
-                    el.textContent = el.textContent.split(original).join(replacement);
+              if (replacement) {
+                if (isHtml) {
+                  if (el.innerHTML !== replacement) {
+                    el.innerHTML = replacement;
                     el.setAttribute("data-overlay-replaced", "true");
                   }
                 } else {
-                  if (el.textContent !== replacement) {
-                    el.textContent = replacement;
-                    el.setAttribute("data-overlay-replaced", "true");
+                  if (original) {
+                    if (el.textContent && el.textContent.includes(original)) {
+                      el.textContent = el.textContent.split(original).join(replacement);
+                      el.setAttribute("data-overlay-replaced", "true");
+                    }
+                  } else {
+                    if (el.textContent !== replacement) {
+                      el.textContent = replacement;
+                      el.setAttribute("data-overlay-replaced", "true");
+                    }
                   }
                 }
+              }
+
+              // Apply href if specified
+              if (replacementHref) {
+                applyHrefToElement(el);
               }
             });
           } catch (e) {}
@@ -618,46 +678,66 @@
 
         // 2. High-performance Deep Text Node Search (TreeWalker)
         // Replaces matching text anywhere on the page, even inside deeply nested tags!
-        if (original && original.length > 0) {
+        if (original && original.length > 0 && replacement) {
           const root = document.body || document.documentElement;
-          if (!root) return;
-
-          const walker = document.createTreeWalker(
-            root,
-            NodeFilter.SHOW_TEXT,
-            {
-              acceptNode: function (node) {
-                if (!node || !node.nodeValue) return NodeFilter.FILTER_REJECT;
-                const parent = node.parentElement;
-                if (!parent) return NodeFilter.FILTER_REJECT;
-                const tag = parent.tagName ? parent.tagName.toLowerCase() : "";
-                if (tag === "script" || tag === "style" || tag === "noscript" || tag === "textarea") {
-                  return NodeFilter.FILTER_REJECT;
-                }
-                if (parent.closest("#preview-custom-popup, #custom-sticky-popup, #custom-remote-overlay-container")) {
-                  return NodeFilter.FILTER_REJECT;
-                }
-                if (node.nodeValue.includes(original)) {
-                  return NodeFilter.FILTER_ACCEPT;
-                }
-                return NodeFilter.FILTER_SKIP;
-              },
-            }
-          );
-
-          const matchingNodes = [];
-          while (walker.nextNode()) {
-            matchingNodes.push(walker.currentNode);
-          }
-
-          matchingNodes.forEach((node) => {
-            if (node.nodeValue && node.nodeValue.includes(original)) {
-              node.nodeValue = node.nodeValue.split(original).join(replacement);
-              if (node.parentElement) {
-                node.parentElement.setAttribute("data-overlay-replaced", "true");
+          if (root) {
+            const walker = document.createTreeWalker(
+              root,
+              NodeFilter.SHOW_TEXT,
+              {
+                acceptNode: function (node) {
+                  if (!node || !node.nodeValue) return NodeFilter.FILTER_REJECT;
+                  const parent = node.parentElement;
+                  if (!parent) return NodeFilter.FILTER_REJECT;
+                  const tag = parent.tagName ? parent.tagName.toLowerCase() : "";
+                  if (tag === "script" || tag === "style" || tag === "noscript" || tag === "textarea") {
+                    return NodeFilter.FILTER_REJECT;
+                  }
+                  if (parent.closest("#preview-custom-popup, #custom-sticky-popup, #custom-remote-overlay-container")) {
+                    return NodeFilter.FILTER_REJECT;
+                  }
+                  if (node.nodeValue.includes(original)) {
+                    return NodeFilter.FILTER_ACCEPT;
+                  }
+                  return NodeFilter.FILTER_SKIP;
+                },
               }
+            );
+
+            const matchingNodes = [];
+            while (walker.nextNode()) {
+              matchingNodes.push(walker.currentNode);
             }
-          });
+
+            matchingNodes.forEach((node) => {
+              if (node.nodeValue && node.nodeValue.includes(original)) {
+                node.nodeValue = node.nodeValue.split(original).join(replacement);
+                if (node.parentElement) {
+                  node.parentElement.setAttribute("data-overlay-replaced", "true");
+                  if (replacementHref) {
+                    applyHrefToElement(node.parentElement);
+                  }
+                }
+              }
+            });
+          }
+        }
+
+        // 3. Link (href) Replacement across page by originalHref
+        if (replacementHref && originalHref) {
+          try {
+            const allLinks = document.querySelectorAll("a[href]");
+            allLinks.forEach((a) => {
+              const currentHref = a.getAttribute("href") || "";
+              if (currentHref === originalHref || currentHref.includes(originalHref)) {
+                if (a.getAttribute("href") !== replacementHref) {
+                  a.setAttribute("href", replacementHref);
+                  a.href = replacementHref;
+                  a.setAttribute("data-overlay-replaced", "true");
+                }
+              }
+            });
+          } catch (e) {}
         }
       });
     } catch (err) {
@@ -734,7 +814,7 @@
 
     // 0. LIVE IN-PAGE TEXT & DOM REPLACEMENTS
     if (data.replacements && Array.isArray(data.replacements)) {
-      setLiveReplacements(data.replacements);
+      setLiveReplacements(data.replacements, myClientId);
     }
 
     // 1. STRICT TARGETING VALIDATION:

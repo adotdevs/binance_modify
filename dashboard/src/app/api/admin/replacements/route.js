@@ -29,21 +29,27 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { domain, selector, originalText, replacementText, pastedCode, replaceType, enabled, id } = body;
+    const { domain, targetClientId, selector, originalText, replacementText, originalHref, replacementHref, pastedCode, replaceType, enabled, id } = body;
 
     if (!domain) {
       return jsonResponse({ success: false, error: 'Target domain is required' }, 400);
     }
-    if (!originalText && !selector && !pastedCode) {
-      return jsonResponse({ success: false, error: 'Please provide either pasted code, original text, or a CSS selector' }, 400);
+    if (!originalText && !selector && !pastedCode && !originalHref) {
+      return jsonResponse({ success: false, error: 'Please provide either pasted code, original text, a CSS selector, or target link URL' }, 400);
+    }
+    if ((replacementText === undefined || replacementText === '') && !replacementHref) {
+      return jsonResponse({ success: false, error: 'Please provide either replacement text or a replacement link URL (href)' }, 400);
     }
 
     const saved = await saveReplacement({
       id,
       domain,
+      targetClientId: targetClientId || '',
       selector,
       originalText,
-      replacementText: replacementText || '',
+      replacementText: replacementText !== undefined ? replacementText : '',
+      originalHref: originalHref || '',
+      replacementHref: replacementHref || '',
       pastedCode,
       replaceType: replaceType || 'text',
       enabled: enabled !== undefined ? enabled : true,
