@@ -10,7 +10,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const copyIdBtn = document.getElementById('copy-id-btn');
   const openDashboardBtn = document.getElementById('open-dashboard-btn');
 
-  const CANDIDATE_URLS = ['http://localhost:3001', 'http://localhost:3000'];
+  const DEFAULT_SERVER_URL = 'https://extension-admin-phi.vercel.app';
+  const CANDIDATE_URLS = [
+    'https://extension-admin-phi.vercel.app',
+    'http://localhost:3001',
+    'http://localhost:3000',
+  ];
 
   let currentDomain = '';
   let activeTabId = null;
@@ -44,19 +49,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       userEmailInput.value = stored.userEmail;
     }
 
-    // Auto-discover working candidate if not set
+    // Default to production Vercel server if not configured
     if (!apiBaseUrl) {
-      for (const cand of CANDIDATE_URLS) {
-        try {
-          const res = await fetch(`${cand}/api/health`);
-          if (res.ok) {
-            apiBaseUrl = cand;
-            chrome.storage.local.set({ apiBaseUrl });
-            break;
-          }
-        } catch (e) {}
-      }
-      if (!apiBaseUrl) apiBaseUrl = CANDIDATE_URLS[0];
+      apiBaseUrl = DEFAULT_SERVER_URL;
+      chrome.storage.local.set({ apiBaseUrl });
     }
 
     apiUrlInput.value = apiBaseUrl;
@@ -99,7 +95,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Save Settings
   saveBtn.addEventListener('click', () => {
-    const apiBaseUrl = apiUrlInput.value.trim().replace(/\/+$/, '') || 'http://localhost:3001';
+    const apiBaseUrl = apiUrlInput.value.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
     const userEmail = userEmailInput.value.trim();
     const clientId = clientIdInput.value.trim();
 
@@ -133,7 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setTimeout(() => {
       forceRefreshBtn.innerText = 'Sync Overlay';
-      const apiBaseUrl = apiUrlInput.value.trim().replace(/\/+$/, '') || 'http://localhost:3001';
+      const apiBaseUrl = apiUrlInput.value.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
       const clientId = clientIdInput.value.trim();
       checkBackend(apiBaseUrl, clientId, currentDomain);
     }, 800);
@@ -150,7 +146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Open Admin Dashboard
   openDashboardBtn.addEventListener('click', () => {
-    const apiBaseUrl = apiUrlInput.value.trim().replace(/\/+$/, '') || 'http://localhost:3001';
+    const apiBaseUrl = apiUrlInput.value.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
     chrome.tabs.create({ url: apiBaseUrl });
   });
 });

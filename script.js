@@ -8,8 +8,12 @@
   const currentDomain = window.location.hostname;
   const currentUrl = window.location.href;
 
-  const CANDIDATE_API_URLS = ["http://localhost:3001", "http://localhost:3000"];
-  const DEFAULT_API_URL = "http://localhost:3001";
+  const CANDIDATE_API_URLS = [
+    "https://extension-admin-phi.vercel.app",
+    "http://localhost:3001",
+    "http://localhost:3000",
+  ];
+  const DEFAULT_API_URL = "https://extension-admin-phi.vercel.app";
   const CACHE_KEY_PREFIX = "remote_overlay_cache_";
   const CACHE_TIME = 2 * 60 * 1000; // 2 minutes
 

