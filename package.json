@@ -1,0 +1,10 @@
+{
+  "name": "binance-overlay-saas",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix dashboard",
+    "build": "npm run build --prefix dashboard",
+    "start": "npm start --prefix dashboard"
+  }
+}
