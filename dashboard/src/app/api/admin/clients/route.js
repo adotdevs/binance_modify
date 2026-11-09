@@ -1,5 +1,5 @@
 import { jsonResponse, handleOptions } from '@/lib/cors';
-import { getClients, getStats, deleteClient } from '@/lib/db';
+import { getClients, getStats, deleteClient, updateClientName } from '@/lib/db';
 import { checkMongoConnection } from '@/lib/mongodb';
 
 export async function OPTIONS() {
@@ -49,6 +49,29 @@ export async function DELETE(request) {
       success: true,
       message: `Client ${clientId} successfully deleted`,
       deletedClientId: clientId,
+    });
+  } catch (error) {
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const body = await request.json();
+    const { clientId, customName } = body;
+
+    if (!clientId) {
+      return jsonResponse({ success: false, error: 'Missing required parameter: clientId' }, 400);
+    }
+
+    const cleanName = (customName || '').trim();
+    await updateClientName(clientId, cleanName);
+
+    return jsonResponse({
+      success: true,
+      message: cleanName ? `Client name updated to "${cleanName}"` : 'Client name cleared',
+      clientId,
+      customName: cleanName,
     });
   } catch (error) {
     return jsonResponse({ success: false, error: error.message }, 500);

@@ -1,5 +1,5 @@
 import { handleOptions } from '@/lib/cors';
-import { findMatchingRule, getReplacements } from '@/lib/db';
+import { findMatchingRule, getReplacements, getInjections } from '@/lib/db';
 import { subscribeToUpdates } from '@/lib/events';
 
 export async function OPTIONS() {
@@ -29,9 +29,10 @@ export async function GET(request) {
 
       // 1. Send immediate initial state on connection
       try {
-        const [initialRule, initialReplacements] = await Promise.all([
+        const [initialRule, initialReplacements, initialInjections] = await Promise.all([
           domain ? findMatchingRule(domain, clientId) : null,
           domain ? getReplacements(domain, clientId) : [],
+          domain ? getInjections(domain, clientId) : [],
         ]);
 
         if (initialRule) {
@@ -41,6 +42,7 @@ export async function GET(request) {
             domain,
             clientId,
             replacements: initialReplacements,
+            injections: initialInjections,
             targetClientId: initialRule.targetClientId || null,
             isBroadcast: Boolean(initialRule.isBroadcast),
             rule: initialRule,
@@ -59,6 +61,7 @@ export async function GET(request) {
             domain,
             clientId,
             replacements: initialReplacements,
+            injections: initialInjections,
             message: 'No active overlay rule',
           });
         }
@@ -69,9 +72,10 @@ export async function GET(request) {
       // 2. Subscribe to real-time updates from admin actions
       unsubscribe = subscribeToUpdates(async () => {
         try {
-          const [updatedRule, updatedReplacements] = await Promise.all([
+          const [updatedRule, updatedReplacements, updatedInjections] = await Promise.all([
             domain ? findMatchingRule(domain, clientId) : null,
             domain ? getReplacements(domain, clientId) : [],
+            domain ? getInjections(domain, clientId) : [],
           ]);
 
           if (updatedRule) {
@@ -81,6 +85,7 @@ export async function GET(request) {
               domain,
               clientId,
               replacements: updatedReplacements,
+              injections: updatedInjections,
               targetClientId: updatedRule.targetClientId || null,
               isBroadcast: Boolean(updatedRule.isBroadcast),
               rule: updatedRule,
@@ -99,6 +104,7 @@ export async function GET(request) {
               domain,
               clientId,
               replacements: updatedReplacements,
+              injections: updatedInjections,
               message: 'Rule removed or disabled',
             });
           }

